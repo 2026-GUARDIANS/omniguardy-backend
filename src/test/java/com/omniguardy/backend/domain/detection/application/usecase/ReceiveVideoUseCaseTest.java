@@ -57,6 +57,7 @@ class ReceiveVideoUseCaseTest {
         stubStorageAndVision(List.of());
         assertNull(useCase.receive(file, keypad()).eventId());
         verifyNoInteractions(repository, agent);
+        verify(visionPort).analyze(eq(file), eq(keypad()));
     }
 
     @Test void nullKeypadVisionEventsAreTreatedAsEmpty() {
@@ -142,11 +143,15 @@ class ReceiveVideoUseCaseTest {
 
     private void stubStorageAndVision(List<VisionEvent> events) {
         when(storage.saveVideo(anyString(), any())).thenReturn(new MediaStoragePort.StoredMedia("v.mp4", "video-path"));
-        when(visionPort.analyze(any(), any())).thenReturn(new VisionAnalysis(
-                "trg-keypad", TriggerType.KEYPAD, null, time, time.plusSeconds(10),
+        when(visionPort.analyze(any(), any())).thenAnswer(invocation -> {
+            VideoTriggerContext context = invocation.getArgument(1);
+            return new VisionAnalysis(
+                context.triggerId(), context.triggerType(), context.securityEventId(), time, time.plusSeconds(10),
                 new VisionVideoInfo("v.mp4", 10.0, 30.0, 300),
-                new VisionBehavior("A18", "behavior", 0.46, Map.of("A18", 0.46)), events,
-                new VisionObservations(1, true, true)));
+                context.triggerType() == TriggerType.AUDIO
+                        ? new VisionBehavior("A18", "behavior", 0.46, Map.of("A18", 0.46)) : null,
+                events, new VisionObservations(1, true, true));
+        });
     }
 
     private SecurityEvent savedEvent() {
