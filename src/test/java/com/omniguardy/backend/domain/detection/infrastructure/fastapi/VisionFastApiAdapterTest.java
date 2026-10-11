@@ -41,7 +41,7 @@ class VisionFastApiAdapterTest {
         server = MockRestServiceServer.bindTo(builder).build();
         ReflectionTestUtils.setField(adapter, "restClient", builder.build());
         ReflectionTestUtils.setField(adapter, "baseUrl", "http://vision.test");
-        ReflectionTestUtils.setField(adapter, "endpoint", "/analyze");
+        ReflectionTestUtils.setField(adapter, "endpoint", "/analyze/vision");
     }
 
     @ParameterizedTest
@@ -143,7 +143,7 @@ class VisionFastApiAdapterTest {
     }
 
     private void expectMultipart(Map<String, String> fields) {
-        server.expect(requestTo("http://vision.test/analyze"))
+        server.expect(requestTo("http://vision.test/analyze/vision"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(request -> {
                     MediaType contentType = request.getHeaders().getContentType();
@@ -171,17 +171,17 @@ class VisionFastApiAdapterTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"N1", "A18", "A20", "A21", "A17", "A19", "FUTURE_CLASS"})
+    @ValueSource(strings = {"N1", "A18", "A21", "A17", "A19", "FUTURE_CLASS"})
     void mapsAudioBehaviorWithoutRestrictingPrediction(String prediction) {
         respond(successResponse("AUDIO", "\"event\"", """
                 {"prediction":"%s","label":"repeated_door_knocking","confidence":0.91,
-                 "classProbabilities":{"N1":0.03,"A18":0.02,"A20":0.04,"A21":0.91}}
+                 "classProbabilities":{"N1":0.03,"A17":0.01,"A18":0.02,"A19":0.03,"A20":0.0,"A21":0.91}}
                 """.formatted(prediction), "[]"));
 
         VisionAnalysis analysis = adapter.analyze(file, context);
 
         assertEquals(new VisionBehavior(prediction, "repeated_door_knocking", 0.91,
-                Map.of("N1", 0.03, "A18", 0.02, "A20", 0.04, "A21", 0.91)), analysis.behavior());
+                Map.of("N1", 0.03, "A17", 0.01, "A18", 0.02, "A19", 0.03, "A20", 0.0, "A21", 0.91)), analysis.behavior());
         assertEquals(TriggerType.AUDIO, analysis.triggerType());
         assertEquals("event", analysis.securityEventId());
         assertTrue(analysis.visionEvents().isEmpty());
@@ -297,7 +297,7 @@ class VisionFastApiAdapterTest {
     }
 
     private void respond(String response) {
-        server.expect(requestTo("http://vision.test/analyze"))
+        server.expect(requestTo("http://vision.test/analyze/vision"))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
     }
 }
