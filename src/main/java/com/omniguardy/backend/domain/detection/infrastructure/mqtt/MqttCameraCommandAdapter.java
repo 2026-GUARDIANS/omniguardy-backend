@@ -6,36 +6,41 @@ import com.omniguardy.backend.global.mqtt.MqttConfig.MqttGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 @RequiredArgsConstructor
 public class MqttCameraCommandAdapter implements CameraCommandPort {
 
     private final MqttGateway mqttGateway;
+    private final ObjectMapper objectMapper;
 
     @Value("${mqtt.topic.camera}")
     private String cameraTopic;
 
     @Override
     public void startCamera(CameraStartCommand command) {
-
-        String payload = """
-                {
-                  "type": "CAMERA_START",
-                  "duration": %d,
-                  "triggerId": "%s",
-                  "triggerType": "%s",
-                  "securityEventId": null,
-                  "triggeredAt": "%s"
-                }
-                """.formatted(
+        CameraStartMessage message = new CameraStartMessage(
+                "CAMERA_START",
                 command.duration(),
                 command.triggerId(),
                 command.triggerType().name(),
-                command.triggeredAt()
+                command.securityEventId(),
+                command.triggeredAt().toString()
         );
+        String payload = objectMapper.writeValueAsString(message);
 
         mqttGateway.sendToMqtt(payload, cameraTopic);
+    }
+
+    private record CameraStartMessage(
+            String type,
+            int duration,
+            String triggerId,
+            String triggerType,
+            String securityEventId,
+            String triggeredAt
+    ) {
     }
 }
 
