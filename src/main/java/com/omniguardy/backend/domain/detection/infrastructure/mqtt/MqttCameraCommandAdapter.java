@@ -16,26 +16,6 @@ public class MqttCameraCommandAdapter implements CameraCommandPort {
     @Value("${mqtt.topic.camera}")
     private String cameraTopic;
 
-    // =========================
-    // 기존 Audio Trigger
-    // =========================
-    @Override
-    public void startCamera(String eventId) {
-
-        String payload = """
-                {
-                  "type": "CAMERA_START",
-                  "duration": 10,
-                  "eventId": "%s"
-                }
-                """.formatted(eventId);
-
-        mqttGateway.sendToMqtt(payload, cameraTopic);
-    }
-
-    // =========================
-    // 신규 Keypad Trigger
-    // =========================
     @Override
     public void startCamera(CameraStartCommand command) {
 
