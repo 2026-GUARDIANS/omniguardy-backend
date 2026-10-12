@@ -2,13 +2,16 @@ package com.omniguardy.backend.domain.detection.application.usecase;
 
 import com.omniguardy.backend.domain.detection.application.model.AudioAnalysis;
 import com.omniguardy.backend.domain.detection.application.model.AudioEventType;
+import com.omniguardy.backend.domain.detection.application.model.CameraStartCommand;
 import com.omniguardy.backend.domain.detection.application.model.MediaFile;
+import com.omniguardy.backend.domain.detection.application.model.TriggerType;
 import com.omniguardy.backend.domain.detection.application.port.out.AudioAnalysisPort;
 import com.omniguardy.backend.domain.detection.application.port.out.CameraCommandPort;
 import com.omniguardy.backend.domain.detection.application.port.out.MediaStoragePort;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -42,7 +45,14 @@ class ReceiveAudioUseCaseTest {
                 && AudioEventType.KNOCK == event.getAudioEventType()
                 && event.getTriggeredAt() != null
                 && "CAMERA_REQUESTED".equals(event.getStatus())));
-        verify(camera).startCamera(receipt.eventId());
+        var commandCaptor = ArgumentCaptor.forClass(CameraStartCommand.class);
+        verify(camera).startCamera(commandCaptor.capture());
+        CameraStartCommand command = commandCaptor.getValue();
+        assertEquals(receipt.eventId(), command.triggerId());
+        assertEquals(TriggerType.AUDIO, command.triggerType());
+        assertEquals(receipt.eventId(), command.securityEventId());
+        assertNotNull(command.triggeredAt());
+        assertEquals(10, command.duration());
     }
 
     @Test void secondHandleInsideCooldownCreatesNothing() {
@@ -50,7 +60,7 @@ class ReceiveAudioUseCaseTest {
         when(storage.saveAudio(anyString(), any())).thenReturn(new MediaStoragePort.StoredMedia("a.wav", "p"));
         assertNotNull(useCase.receive(file).eventId());
         assertNull(useCase.receive(file).eventId());
-        verify(camera, times(1)).startCamera(anyString());
+        verify(camera, times(1)).startCamera(any(CameraStartCommand.class));
         verify(repository, times(1)).save(any(SecurityEvent.class));
     }
 }

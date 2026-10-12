@@ -3,7 +3,9 @@ package com.omniguardy.backend.domain.detection.application.usecase;
 import com.omniguardy.backend.domain.detection.application.model.AudioAnalysis;
 import com.omniguardy.backend.domain.detection.application.model.AudioEventType;
 import com.omniguardy.backend.domain.detection.application.model.AudioReceipt;
+import com.omniguardy.backend.domain.detection.application.model.CameraStartCommand;
 import com.omniguardy.backend.domain.detection.application.model.MediaFile;
+import com.omniguardy.backend.domain.detection.application.model.TriggerType;
 import com.omniguardy.backend.domain.detection.application.port.out.AudioAnalysisPort;
 import com.omniguardy.backend.domain.detection.application.port.out.CameraCommandPort;
 import com.omniguardy.backend.domain.detection.application.port.out.MediaStoragePort;
@@ -23,6 +25,7 @@ import com.omniguardy.backend.domain.detection.application.port.in.ReceiveAudioI
 @RequiredArgsConstructor
 public class ReceiveAudioUseCase implements ReceiveAudioInputPort {
     private static final long CAMERA_COOLDOWN_MS = 12_000L;
+    private static final int CAMERA_DURATION_SECONDS = 10;
     private long lastCameraTriggeredAt;
 
     private final AudioAnalysisPort audioAnalysisPort;
@@ -41,12 +44,19 @@ public class ReceiveAudioUseCase implements ReceiveAudioInputPort {
         }
 
         String eventId = UUID.randomUUID().toString();
+        OffsetDateTime triggeredAt = OffsetDateTime.now();
         MediaStoragePort.StoredMedia stored = mediaStoragePort.saveAudio(eventId, file);
         SecurityEvent event = SecurityEvent.builder().eventId(eventId).audioEventType(analysis.eventType())
                 .audioProbability(analysis.probability()).audioPath(stored.path()).status("AUDIO_DETECTED").build();
-        event.connectAudioTrigger(eventId, OffsetDateTime.now());
+        event.connectAudioTrigger(eventId, triggeredAt);
         securityEventRepository.save(event);
-        cameraCommandPort.startCamera(eventId);
+        cameraCommandPort.startCamera(new CameraStartCommand(
+                eventId,
+                TriggerType.AUDIO,
+                eventId,
+                triggeredAt,
+                CAMERA_DURATION_SECONDS
+        ));
         event.markCameraRequested();
         return new AudioReceipt(eventId, stored.filename(), file.size(), analysis.eventType(), analysis.probability());
     }
