@@ -5,6 +5,8 @@ import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEve
 import com.omniguardy.backend.domain.securityevent.application.port.out.RiskAssessmentPort;
 import com.omniguardy.backend.domain.securityevent.domain.model.AgentAssessment;
 import com.omniguardy.backend.domain.securityevent.domain.model.AgentContext;
+import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType;
+import com.omniguardy.backend.domain.securityevent.domain.model.RiskLevel;
 import com.omniguardy.backend.domain.securityevent.domain.error.SecurityEventErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -30,8 +32,12 @@ public class AnalyzeAgentRiskUseCase {
             throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
         }
         try {
-            AgentAssessment assessment = riskAssessmentPort.assess(toContext(event));
-            event.updateAgentResult(assessment.riskLevel().name(), assessment.reason());
+            AgentContext context = toContext(event);
+            RiskLevel requiredRiskLevel = requiredRiskLevel(context);
+            AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
+            AgentAssessment assessment = new AgentAssessment(
+                    requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
+            event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
             securityEventRepository.save(event);
             return assessment;
         } catch (RuntimeException exception) {
@@ -68,5 +74,24 @@ public class AnalyzeAgentRiskUseCase {
     }
 
     private double value(Double value) { return value == null ? 0.0 : value; }
+
+    private RiskLevel requiredRiskLevel(AgentContext context) {
+        if (context.triggerType() == EventTriggerType.KEYPAD
+                && context.vision().visionEvents().stream().anyMatch(this::isHighRiskKeypadEvent)) {
+            return RiskLevel.HIGH;
+        }
+
+        if (context.triggerType() == EventTriggerType.AUDIO) {
+            if ("A18".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.MEDIUM;
+            if ("A21".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.LOW;
+        }
+
+        throw new BusinessException(SecurityEventErrorCode.INVALID_AGENT_CONTEXT);
+    }
+
+    private boolean isHighRiskKeypadEvent(AgentContext.VisionEvent event) {
+        return event != null && ("SILENT_SIGNAL".equalsIgnoreCase(event.eventType())
+                || "REAR_CLOSE_APPROACH_SUSPECTED".equalsIgnoreCase(event.eventType()));
+    }
 }
 

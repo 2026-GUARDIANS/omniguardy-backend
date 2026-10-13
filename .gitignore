@@ -43,3 +43,8 @@ omniguardy-google-tts-key.json
 src/main/resources/firebase/firebase-service-account.json
 
 /uploads/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example

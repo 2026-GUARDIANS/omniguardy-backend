@@ -51,7 +51,7 @@ class VisionFastApiAdapterTest {
             """})
     void usesContextWhilePreservingAnalysisResults(String trigger) {
         respond("""
-                {"result":{"trigger":%s,"analyzedAt":"2026-09-23T12:01:00+09:00",
+                {"status":"success","result":{"trigger":%s,"analyzedAt":"2026-09-23T12:01:00+09:00",
                   "behavior":{"prediction":"A18","label":"test","confidence":0.9,
                               "classProbabilities":{"A18":0.9}},
                   "video":{"fileName":"video.mp4","durationSeconds":3.0,"fps":30.0,"frameCount":90},
@@ -81,7 +81,7 @@ class VisionFastApiAdapterTest {
     @NullAndEmptySource
     @ValueSource(strings = " ")
     void preservesOptionalKeypadFields(String triggeredAt) {
-        respond("{\"result\":{}}");
+        respond("{\"status\":\"success\",\"result\":{}}");
         VisionAnalysis analysis = adapter.analyze(file,
                 new VideoTriggerContext(null, "keypad", TriggerType.KEYPAD, null, triggeredAt));
         assertEquals("keypad", analysis.triggerId());
@@ -94,7 +94,7 @@ class VisionFastApiAdapterTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "null", "{}", "{\"result\":null}",
+    @ValueSource(strings = {"", "null", "{}", "{\"result\":{}}", "{\"result\":null}",
             "{\"result\":{\"analyzedAt\":\"invalid\"}}", "{\"result\":{\"visionEvents\":[null]}}"})
     void convertsInvalidResponsesToBusinessException(String response) {
         respond(response);
@@ -105,7 +105,7 @@ class VisionFastApiAdapterTest {
 
     @Test
     void convertsInvalidContextTimestampToBusinessException() {
-        respond("{\"result\":{}}");
+        respond("{\"status\":\"success\",\"result\":{}}");
         BusinessException exception = assertThrows(BusinessException.class, () -> adapter.analyze(file,
                 new VideoTriggerContext(null, "keypad", TriggerType.KEYPAD, null, "invalid")));
         assertEquals(DetectionErrorCode.VISION_ANALYSIS_FAILED, exception.getErrorCode());
@@ -167,7 +167,7 @@ class VisionFastApiAdapterTest {
                             "name=\"file\"; filename=\"video.mp4\"",
                             new String(file.bytes(), StandardCharsets.ISO_8859_1));
                 })
-                .andRespond(withSuccess("{\"result\":{}}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"status\":\"success\",\"result\":{}}", MediaType.APPLICATION_JSON));
     }
 
     @ParameterizedTest

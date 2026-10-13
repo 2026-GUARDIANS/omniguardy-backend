@@ -43,7 +43,8 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals(0.464551, captor.getValue().vision().confidence());
         assertEquals(0.222806, captor.getValue().vision().classProbabilities().get("A17"));
         assertEquals(0, captor.getValue().vision().personCount());
-        assertEquals("HIGH", event.getRiskLevel());
+        assertEquals("MEDIUM", event.getRiskLevel());
+        assertEquals(85, event.getRiskScore());
         assertEquals("COMPLETED", event.getStatus());
     }
 
@@ -56,6 +57,21 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals("A18", event.getVisionPrediction());
         assertEquals("FAILED", event.getStatus());
         verify(repository).save(event);
+    }
+
+    @Test void audioA21IsAlwaysLowAndPreservesAgentScore() {
+        SecurityEvent event = SecurityEvent.builder().eventId("a21-event")
+                .triggerType(EventTriggerType.AUDIO).status("VISION_ANALYZED")
+                .visionPrediction("A21").visionEvents("[]").build();
+        when(repository.findByEventId("a21-event")).thenReturn(Optional.of(event));
+        when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.HIGH, 24, "반복 노크 감지"));
+
+        AgentAssessment result = useCase.analyze("a21-event");
+
+        assertEquals(RiskLevel.LOW, result.riskLevel());
+        assertEquals(24, result.riskScore());
+        assertEquals("LOW", event.getRiskLevel());
+        assertEquals(24, event.getRiskScore());
     }
 
     private SecurityEvent visionAnalyzedEvent() {
@@ -71,8 +87,8 @@ class AnalyzeAgentRiskUseCaseTest {
     @NullAndEmptySource
     @ValueSource(strings = {"   ", "[]", "null"})
     void missingVisionEventsBecomeEmptyArray(String json) {
-        SecurityEvent event = SecurityEvent.builder().eventId("legacy").status("VISION_ANALYZED")
-                .visionEvents(json).build();
+        SecurityEvent event = SecurityEvent.builder().eventId("legacy").triggerType(EventTriggerType.AUDIO)
+                .status("VISION_ANALYZED").visionPrediction("A18").visionEvents(json).build();
         when(repository.findByEventId("legacy")).thenReturn(Optional.of(event));
         when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.LOW, 0, "No evidence"));
         useCase.analyze("legacy");
@@ -94,7 +110,7 @@ class AnalyzeAgentRiskUseCaseTest {
 
     @Test void keypadEventsReachAiServiceAsStructuredArrayWithAllFields() {
         String events = """
-                [{"eventType":"OTHER_EVENT","confidence":0.9,"detectedFrame":20,
+                [{"eventType":"REAR_CLOSE_APPROACH_SUSPECTED","confidence":0.9,"detectedFrame":20,
                   "details":{"label":"entry","count":2,"nested":{"visible":true}}}]
                 """;
         SecurityEvent event = SecurityEvent.builder().eventId("keypad-event").triggerType(EventTriggerType.KEYPAD)
@@ -118,6 +134,8 @@ class AnalyzeAgentRiskUseCaseTest {
         var actualEvents = json.get("vision").get("visionEvents");
         assertTrue(actualEvents.isArray());
         assertEquals(mapper.readTree(events), actualEvents);
+        assertEquals("HIGH", event.getRiskLevel());
+        assertEquals(10, event.getRiskScore());
         assertFalse(json.has("triggerId"));
         assertFalse(json.has("triggeredAt"));
     }

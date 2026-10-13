@@ -99,13 +99,12 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                         );
 
         // Legacy uploads only carry eventId. Reuse the trigger recorded before camera execution.
-        event.connectAudioTrigger(
-                eventId,
-                triggerContext.triggeredAt() == null || triggerContext.triggeredAt().isBlank()
-                        ? null : OffsetDateTime.parse(triggerContext.triggeredAt()));
+        event.connectAudioTrigger(eventId, parseTriggeredAtIfPresent(triggerContext.triggeredAt()));
         VideoTriggerContext audioContext = new VideoTriggerContext(
                 eventId, event.getTriggerId(), TriggerType.AUDIO, eventId,
                 event.getTriggeredAt() == null ? null : event.getTriggeredAt().toString());
+
+        validateRequiredTriggerFields(audioContext);
 
         try {
 
@@ -131,6 +130,8 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                             audioContext
                     );
 
+            validateVisionResult(vision, TriggerType.AUDIO);
+
             event.updateVisionResult(
                     vision.prediction(),
                     vision.confidence(),
@@ -143,9 +144,12 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                     vision.analyzedAt()
             );
 
+            if (!vision.requiresAudioRiskAssessment()) {
+                event.completeWithoutRisk();
+            }
             securityEventRepository.save(event);
 
-            if (!vision.hasSilentSignal()) {
+            if (vision.requiresAudioRiskAssessment()) {
                 analyzeAgentRiskUseCase.analyze(eventId);
             }
 
@@ -174,16 +178,9 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
             VideoTriggerContext triggerContext
     ) {
 
-        String triggerId =
-                triggerContext.triggerId();
-
-        if (triggerId == null
-                || triggerId.isBlank()) {
-
-            throw new IllegalArgumentException(
-                    "triggerId is required for KEYPAD trigger"
-            );
-        }
+        validateRequiredTriggerFields(triggerContext);
+        String triggerId = triggerContext.triggerId();
+        OffsetDateTime triggeredAt = OffsetDateTime.parse(triggerContext.triggeredAt());
 
         /*
          * KEYPAD 자체는 SecurityEvent가 아니다.
@@ -204,21 +201,19 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                         triggerContext
                 );
 
+        validateVisionResult(vision, TriggerType.KEYPAD);
+
         if (!vision.hasVisionEvents()) {
             return new VideoReceipt(null, stored.filename(), vision);
         }
 
-        OffsetDateTime triggeredAt = triggerContext.triggeredAt() == null
-                || triggerContext.triggeredAt().isBlank()
-                ? vision.triggeredAt() : OffsetDateTime.parse(triggerContext.triggeredAt());
         String eventId = recordKeypadVisionInputPort.record(new RecordKeypadVisionInputPort.Command(
                 triggerId, triggeredAt, stored.path(), vision.prediction(), vision.confidence(),
                 objectMapper.writeValueAsString(vision.classProbabilities()),
                 objectMapper.writeValueAsString(vision.visionEvents()), vision.personCount(),
                 vision.videoDurationSeconds(), vision.analyzedAt()));
 
-        // SILENT_SIGNAL action handling is a separate, subsequent implementation.
-        if (!vision.hasSilentSignal()) {
+        if (vision.hasHighRiskKeypadEvent()) {
             analyzeAgentRiskUseCase.analyze(eventId);
         }
         return new VideoReceipt(eventId, stored.filename(), vision);
@@ -263,6 +258,44 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
         }
 
         return triggerContext.eventId();
+    }
+
+    private void validateRequiredTriggerFields(VideoTriggerContext triggerContext) {
+        if (triggerContext.triggerId() == null || triggerContext.triggerId().isBlank()) {
+            throw new BusinessException(DetectionErrorCode.TRIGGER_ID_REQUIRED);
+        }
+        if (triggerContext.triggeredAt() == null || triggerContext.triggeredAt().isBlank()) {
+            throw new BusinessException(DetectionErrorCode.TRIGGERED_AT_REQUIRED);
+        }
+        try {
+            OffsetDateTime.parse(triggerContext.triggeredAt());
+        } catch (RuntimeException exception) {
+            throw new BusinessException(DetectionErrorCode.TRIGGERED_AT_REQUIRED, exception);
+        }
+    }
+
+    private OffsetDateTime parseTriggeredAtIfPresent(String triggeredAt) {
+        if (triggeredAt == null || triggeredAt.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(triggeredAt);
+        } catch (RuntimeException exception) {
+            throw new BusinessException(DetectionErrorCode.TRIGGERED_AT_REQUIRED, exception);
+        }
+    }
+
+    private void validateVisionResult(VisionAnalysis vision, TriggerType triggerType) {
+        boolean invalid = vision == null;
+        if (!invalid && triggerType == TriggerType.AUDIO) {
+            invalid = vision.behavior() == null || vision.hasVisionEvents();
+        }
+        if (!invalid && triggerType == TriggerType.KEYPAD) {
+            invalid = vision.behavior() != null;
+        }
+        if (invalid) {
+            throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED);
+        }
     }
 }
 

@@ -44,6 +44,8 @@ ai:
     vision:
       base-url: https://deodorant-dean-shrapnel.ngrok-free.dev #주소 바뀌면 변경하기
       endpoint: /analyze/vision
+      connect-timeout-seconds: ${VISION_CONNECT_TIMEOUT_SECONDS:5}
+      read-timeout-seconds: ${VISION_READ_TIMEOUT_SECONDS:30}
     audio:
       base-url: https://mauve-elsewhere-strenuous.ngrok-free.dev #주소 바뀌면 변경하기
       endpoint: /predict

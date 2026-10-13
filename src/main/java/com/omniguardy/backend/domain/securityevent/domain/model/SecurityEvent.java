@@ -102,6 +102,9 @@ public class SecurityEvent extends BaseTimeEntity {
     @Column(name = "risk_level", length = 20)
     private String riskLevel;
 
+    @Column(name = "risk_score")
+    private Integer riskScore;
+
     @Column(name = "agent_reason", length = 1000)
     private String agentReason;
 
@@ -155,10 +158,19 @@ public class SecurityEvent extends BaseTimeEntity {
 
     public void updateAgentResult(
             String riskLevel,
+            int riskScore,
             String agentReason
     ) {
         this.riskLevel = riskLevel;
+        this.riskScore = riskScore;
         this.agentReason = agentReason;
+        this.status = SecurityEventStatus.COMPLETED.name();
+    }
+
+    public void completeWithoutRisk() {
+        this.riskLevel = null;
+        this.riskScore = null;
+        this.agentReason = null;
         this.status = SecurityEventStatus.COMPLETED.name();
     }
 
