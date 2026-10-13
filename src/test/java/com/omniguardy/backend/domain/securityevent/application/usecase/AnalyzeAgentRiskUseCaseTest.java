@@ -26,7 +26,9 @@ import static org.mockito.Mockito.*;
 class AnalyzeAgentRiskUseCaseTest {
     private final SecurityEventRepository repository = mock(SecurityEventRepository.class);
     private final RiskAssessmentPort port = mock(RiskAssessmentPort.class);
-    private final AnalyzeAgentRiskUseCase useCase = new AnalyzeAgentRiskUseCase(repository, port, new ObjectMapper());
+    private final RiskResponseService riskResponseService = mock(RiskResponseService.class);
+    private final AnalyzeAgentRiskUseCase useCase = new AnalyzeAgentRiskUseCase(
+            repository, port, new ObjectMapper(), riskResponseService);
 
     @Test void includesAudioAndAllVisionDataAndCompletesExistingEvent() {
         SecurityEvent event = visionAnalyzedEvent();
@@ -46,6 +48,10 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals("MEDIUM", event.getRiskLevel());
         assertEquals(85, event.getRiskScore());
         assertEquals("COMPLETED", event.getStatus());
+        verify(riskResponseService).respond(event, RiskLevel.MEDIUM);
+        var order = inOrder(repository, riskResponseService);
+        order.verify(repository).save(event);
+        order.verify(riskResponseService).respond(event, RiskLevel.MEDIUM);
     }
 
     @Test void failurePreservesEvidenceAndMarksFailed() {
@@ -57,6 +63,7 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals("A18", event.getVisionPrediction());
         assertEquals("FAILED", event.getStatus());
         verify(repository).save(event);
+        verifyNoInteractions(riskResponseService);
     }
 
     @Test void audioA21IsAlwaysLowAndPreservesAgentScore() {
@@ -123,7 +130,8 @@ class AnalyzeAgentRiskUseCaseTest {
         response.reason = "Vision evidence";
         when(service.assess(anyString())).thenReturn(response);
         ObjectMapper mapper = new ObjectMapper();
-        new AnalyzeAgentRiskUseCase(repository, new LangChainRiskAssessmentAdapter(service, mapper), mapper)
+        new AnalyzeAgentRiskUseCase(repository, new LangChainRiskAssessmentAdapter(service, mapper), mapper,
+                riskResponseService)
                 .analyze("keypad-event");
         var captor = ArgumentCaptor.forClass(String.class);
         verify(service).assess(captor.capture());

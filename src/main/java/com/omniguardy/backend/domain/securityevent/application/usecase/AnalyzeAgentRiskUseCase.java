@@ -24,6 +24,7 @@ public class AnalyzeAgentRiskUseCase {
     private final SecurityEventRepository securityEventRepository;
     private final RiskAssessmentPort riskAssessmentPort;
     private final ObjectMapper objectMapper;
+    private final RiskResponseService riskResponseService;
 
     public AgentAssessment analyze(String eventId) {
         SecurityEvent event = securityEventRepository.findByEventId(eventId)
@@ -31,20 +32,23 @@ public class AnalyzeAgentRiskUseCase {
         if (!event.isVisionAnalyzed()) {
             throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
         }
+        AgentAssessment assessment;
         try {
             AgentContext context = toContext(event);
             RiskLevel requiredRiskLevel = requiredRiskLevel(context);
             AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
-            AgentAssessment assessment = new AgentAssessment(
+            assessment = new AgentAssessment(
                     requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
             event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
             securityEventRepository.save(event);
-            return assessment;
         } catch (RuntimeException exception) {
             event.fail();
             securityEventRepository.save(event);
             throw exception;
         }
+
+        riskResponseService.respond(event, assessment.riskLevel());
+        return assessment;
     }
 
     private AgentContext toContext(SecurityEvent event) {
