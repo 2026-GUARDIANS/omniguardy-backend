@@ -13,15 +13,18 @@ import com.omniguardy.backend.global.error.GlobalErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import com.omniguardy.backend.global.success.SuccessResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Locale;
 
 @RestController
+@Slf4j
 @RequiredArgsConstructor
 @RequestMapping("/api/edge")
 public class EdgeVideoController {
@@ -69,6 +72,10 @@ public class EdgeVideoController {
             String triggeredAt
 
     ) throws IOException {
+
+        log.info("video_perf stage=receive_start at={} eventId={} triggerId={} triggerType={} sizeBytes={}",
+                Instant.now(), eventId, triggerId, triggerType == null || triggerType.isBlank() ? "AUDIO" : triggerType,
+                file.getSize());
 
         TriggerType resolvedTriggerType;
 

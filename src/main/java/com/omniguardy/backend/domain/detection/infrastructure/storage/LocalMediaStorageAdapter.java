@@ -5,14 +5,18 @@ import com.omniguardy.backend.domain.detection.application.port.out.MediaStorage
 import com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
+import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 
 @Component
+@Slf4j
 public class LocalMediaStorageAdapter implements MediaStoragePort {
     private static final Path AUDIO_DIR = Paths.get("./uploads/audio");
     private static final Path VIDEO_DIR = Paths.get("./uploads/video");
@@ -23,8 +27,14 @@ public class LocalMediaStorageAdapter implements MediaStoragePort {
     }
 
     @Override public StoredMedia saveVideo(String eventId, MediaFile file) {
+        Instant startedAt = Instant.now();
+        long startedNanos = System.nanoTime();
         String original = fallback(file.originalFilename(), "video.mp4");
-        return save(VIDEO_DIR, eventId + "_" + UUID.randomUUID() + "_" + original, file);
+        StoredMedia stored = save(VIDEO_DIR, eventId + "_" + UUID.randomUUID() + "_" + original, file);
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+        log.info("video_perf stage=storage_complete mediaId={} startedAt={} completedAt={} elapsedMs={} sizeBytes={}",
+                eventId, startedAt, Instant.now(), elapsedMs, file.size());
+        return stored;
     }
 
     private StoredMedia save(Path directory, String filename, MediaFile file) {

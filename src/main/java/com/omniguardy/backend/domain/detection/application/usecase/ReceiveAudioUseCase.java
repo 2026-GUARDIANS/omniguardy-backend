@@ -14,6 +14,7 @@ import com.omniguardy.backend.global.error.exception.BusinessException;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import lombok.RequiredArgsConstructor;
+import com.omniguardy.backend.domain.user.application.usecase.DemoUserResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,7 @@ public class ReceiveAudioUseCase implements ReceiveAudioInputPort {
     private final MediaStoragePort mediaStoragePort;
     private final CameraCommandPort cameraCommandPort;
     private final SecurityEventRepository securityEventRepository;
+    private final DemoUserResolver demoUserResolver;
 
     @Transactional
     public AudioReceipt receive(MediaFile file) {
@@ -43,10 +45,11 @@ public class ReceiveAudioUseCase implements ReceiveAudioInputPort {
             return new AudioReceipt(null, original, file.size(), analysis.eventType(), analysis.probability());
         }
 
+        var user = demoUserResolver.resolve().orElse(null);
         String eventId = UUID.randomUUID().toString();
         OffsetDateTime triggeredAt = OffsetDateTime.now();
         MediaStoragePort.StoredMedia stored = mediaStoragePort.saveAudio(eventId, file);
-        SecurityEvent event = SecurityEvent.builder().eventId(eventId).audioEventType(analysis.eventType())
+        SecurityEvent event = SecurityEvent.builder().eventId(eventId).user(user).audioEventType(analysis.eventType())
                 .audioProbability(analysis.probability()).audioPath(stored.path()).status("AUDIO_DETECTED").build();
         event.connectAudioTrigger(eventId, triggeredAt);
         securityEventRepository.save(event);

@@ -24,7 +24,18 @@ class ReceiveVideoUseCaseTest {
     private final AnalyzeAgentRiskUseCase agent = mock(AnalyzeAgentRiskUseCase.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final ReceiveVideoUseCase useCase = new ReceiveVideoUseCase(visionPort, storage, repository,
-            agent, mapper, new RecordKeypadVisionUseCase(repository, mapper));
+            agent, mapper, new RecordKeypadVisionUseCase(repository, mapper,
+                    new com.omniguardy.backend.domain.user.application.usecase.DemoUserResolver(
+                            demoUsers(),
+                            new org.springframework.mock.env.MockEnvironment()
+                                    .withProperty("omniguardy.demo.user-id", "1"))));
+
+    private static com.omniguardy.backend.domain.user.domain.repository.UserRepository demoUsers() {
+        var users = mock(com.omniguardy.backend.domain.user.domain.repository.UserRepository.class);
+        when(users.findById(1L)).thenReturn(Optional.of(
+                mock(com.omniguardy.backend.domain.user.domain.model.User.class)));
+        return users;
+    }
     private final MediaFile file = new MediaFile("video.mp4", "video/mp4", new byte[]{1});
     private final OffsetDateTime time = OffsetDateTime.parse("2026-09-23T12:00:00+09:00");
 
