@@ -5,6 +5,7 @@ import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import lombok.RequiredArgsConstructor;
+import com.omniguardy.backend.domain.user.application.usecase.DemoUserResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -16,6 +17,7 @@ import java.util.UUID;
 public class RecordKeypadVisionUseCase implements RecordKeypadVisionInputPort {
     private final SecurityEventRepository repository;
     private final ObjectMapper objectMapper;
+    private final DemoUserResolver demoUserResolver;
 
     @Override
     @Transactional
@@ -29,6 +31,7 @@ public class RecordKeypadVisionUseCase implements RecordKeypadVisionInputPort {
             throw new IllegalArgumentException("KEYPAD triggerId and triggeredAt are required");
         }
         SecurityEvent event = SecurityEvent.builder()
+                .user(demoUserResolver.resolve().orElse(null))
                 .eventId(UUID.randomUUID().toString())
                 .triggerId(command.triggerId()).triggerType(EventTriggerType.KEYPAD)
                 .triggeredAt(command.triggeredAt()).videoPath(command.videoPath()).build();

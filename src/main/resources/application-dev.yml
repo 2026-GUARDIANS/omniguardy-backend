@@ -12,6 +12,10 @@ spring:
     show-sql: true
     properties.hibernate.format_sql: true # SQL을 예쁘게 줄바꿈해서 보여줌
 
+omniguardy:
+  demo:
+    user-id: 1
+
 server:
   port: 8080
 
