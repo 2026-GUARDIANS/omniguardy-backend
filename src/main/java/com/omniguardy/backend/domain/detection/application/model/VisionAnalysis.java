@@ -78,4 +78,17 @@ public record VisionAnalysis(
         return visionEvents.stream()
                 .anyMatch(VisionEvent::isSilentSignal);
     }
+
+    public boolean hasHighRiskKeypadEvent() {
+        return visionEvents.stream()
+                .anyMatch(VisionEvent::isHighRiskKeypadEvent);
+    }
+
+    public boolean requiresAudioRiskAssessment() {
+        if (behavior == null || behavior.prediction() == null) {
+            return false;
+        }
+        return "A18".equalsIgnoreCase(behavior.prediction())
+                || "A21".equalsIgnoreCase(behavior.prediction());
+    }
 }

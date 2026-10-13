@@ -5,28 +5,49 @@ import com.omniguardy.backend.domain.detection.application.port.out.VisionAnalys
 import com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode;
 import com.omniguardy.backend.domain.detection.infrastructure.fastapi.dto.VisionApiResponse;
 import com.omniguardy.backend.global.error.exception.BusinessException;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
 import java.time.OffsetDateTime;
+import java.time.Duration;
+import java.net.http.HttpClient;
 import java.util.List;
 
 @Component
 public class VisionFastApiAdapter implements VisionAnalysisPort {
 
-    private final RestClient restClient =
-            RestClient.create();
+    private RestClient restClient;
 
     @Value("${ai.fastapi.vision.base-url}")
     private String baseUrl;
 
     @Value("${ai.fastapi.vision.endpoint}")
     private String endpoint;
+
+    @Value("${ai.fastapi.vision.connect-timeout-seconds:5}")
+    private long connectTimeoutSeconds;
+
+    @Value("${ai.fastapi.vision.read-timeout-seconds:30}")
+    private long readTimeoutSeconds;
+
+    @PostConstruct
+    void initializeRestClient() {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
+        this.restClient = RestClient.builder()
+                .requestFactory(requestFactory)
+                .build();
+    }
 
     @Override
     public VisionAnalysis analyze(
@@ -96,7 +117,8 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
                                 VisionApiResponse.class
                         );
 
-            if (response == null || response.result() == null) {
+            if (response == null || !"success".equalsIgnoreCase(response.status())
+                    || response.result() == null) {
                 throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED);
             }
 

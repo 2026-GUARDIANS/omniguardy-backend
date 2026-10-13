@@ -22,6 +22,10 @@ public class OpenAiAgentConfig {
             @Value("${ai.agent.openai.api-key}") String apiKey,
             @Value("${ai.agent.openai.model-name}") String modelName,
             @Value("${ai.agent.openai.timeout-seconds:60}") long timeoutSeconds) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "OPENAI_API_KEY must be set when AGENT_AI_ENABLED=true");
+        }
         return OpenAiChatModel.builder()
                 .apiKey(apiKey)
                 .modelName(modelName)

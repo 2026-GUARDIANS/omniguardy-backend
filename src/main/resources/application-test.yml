@@ -45,6 +45,8 @@ ai:
     vision:
       base-url: http://localhost:8000
       endpoint: /analyze/vision
+      connect-timeout-seconds: 5
+      read-timeout-seconds: 30
     audio:
       base-url: http://localhost:8001
       endpoint: /predict
