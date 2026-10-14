@@ -1,9 +1,9 @@
 package com.omniguardy.backend.global.security.auth;
 
-import com.omniguardy.backend.domain.user.entity.User;
-import com.omniguardy.backend.domain.user.repository.UserRepository;
-import com.omniguardy.backend.global.exception.CustomException;
-import com.omniguardy.backend.global.exception.ErrorCode;
+import com.omniguardy.backend.domain.user.domain.model.User;
+import com.omniguardy.backend.domain.user.domain.repository.UserRepository;
+import com.omniguardy.backend.domain.user.domain.error.UserErrorCode;
+import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -19,7 +19,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
 
         return new CustomUserDetails(user);
     }

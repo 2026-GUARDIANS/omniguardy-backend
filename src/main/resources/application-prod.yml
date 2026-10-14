@@ -6,6 +6,13 @@ spring:
   jpa:
     hibernate.ddl-auto: validate
     properties.hibernate.jdbc.time_zone: UTC
+ai:
+  agent:
+    enabled: ${AGENT_AI_ENABLED:true}
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      model-name: ${OPENAI_MODEL_NAME:gpt-5-mini}
+      timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:60}
     # Hibernate가 DB와 주고받는 시간대(TimeZone)를 강제로 지정
     # 한국 시간(Asia/Seoul)을 그대로 DB에 넣으면, 서버/DB/애플리케이션 시간대가 다르면 시간이 꼬이는 문제가 생김
     # => 운영(prod)에서는 UTC 권장

@@ -1,6 +1,6 @@
 package com.omniguardy.backend.global.security.auth;
 
-import com.omniguardy.backend.domain.user.entity.User;
+import com.omniguardy.backend.domain.user.domain.model.User;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

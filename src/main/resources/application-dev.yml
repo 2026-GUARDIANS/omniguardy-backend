@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
   datasource:
     url: jdbc:mysql://localhost:3312/omniguardy_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=utf8
     username: team3
@@ -7,6 +11,10 @@ spring:
     hibernate.ddl-auto: update
     show-sql: true
     properties.hibernate.format_sql: true # SQL을 예쁘게 줄바꿈해서 보여줌
+
+omniguardy:
+  demo:
+    user-id: 1
 
 server:
   port: 8080
@@ -17,7 +25,31 @@ jwt:
   refresh-token-expire-time: 1209600000  # 14일
 
 mqtt:
-  broker-url: tcp://localhost:1883
+  broker-url: tcp://172.30.1.94:1883 #라즈베리파이 ip
   client-id: omniguardy-backend
   topic:
     tts: door/tts
+    camera: door/camera
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+  tts:
+    audio-dir: ./_vol/tts/audio
+    audio-url-prefix: /audio/tts
+
+ai:
+  agent:
+    enabled: ${AGENT_AI_ENABLED:false}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model-name: ${OPENAI_MODEL_NAME:gpt-5-mini}
+      timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:60}
+  fastapi:
+    vision:
+      base-url: https://deodorant-dean-shrapnel.ngrok-free.dev #주소 바뀌면 변경하기
+      endpoint: /analyze/vision
+      connect-timeout-seconds: ${VISION_CONNECT_TIMEOUT_SECONDS:5}
+      read-timeout-seconds: ${VISION_READ_TIMEOUT_SECONDS:30}
+    audio:
+      base-url: https://mauve-elsewhere-strenuous.ngrok-free.dev #주소 바뀌면 변경하기
+      endpoint: /predict
