@@ -1,5 +1,6 @@
 package com.omniguardy.backend.domain.securityevent.application.usecase;
 
+import com.omniguardy.backend.domain.securityevent.application.metrics.AgentPerformanceMetrics;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import com.omniguardy.backend.domain.securityevent.application.port.out.RiskAssessmentPort;
@@ -25,30 +26,45 @@ public class AnalyzeAgentRiskUseCase {
     private final RiskAssessmentPort riskAssessmentPort;
     private final ObjectMapper objectMapper;
     private final RiskResponseService riskResponseService;
+    private final AgentPerformanceMetrics performanceMetrics;
 
     public AgentAssessment analyze(String eventId) {
-        SecurityEvent event = securityEventRepository.findByEventId(eventId)
-                .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
-        if (!event.isVisionAnalyzed()) {
-            throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
-        }
-        AgentAssessment assessment;
+        long startedNanos = System.nanoTime();
+        EventTriggerType eventType = null;
+        boolean success = false;
+        Throwable failure = null;
         try {
-            AgentContext context = toContext(event);
-            RiskLevel requiredRiskLevel = requiredRiskLevel(context);
-            AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
-            assessment = new AgentAssessment(
-                    requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
-            event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
-            securityEventRepository.save(event);
-        } catch (RuntimeException exception) {
-            event.fail();
-            securityEventRepository.save(event);
-            throw exception;
-        }
+            SecurityEvent event = securityEventRepository.findByEventId(eventId)
+                    .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
+            eventType = event.getTriggerType();
+            if (!event.isVisionAnalyzed()) {
+                throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
+            }
+            AgentAssessment assessment;
+            try {
+                AgentContext context = toContext(event);
+                RiskLevel requiredRiskLevel = requiredRiskLevel(context);
+                AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
+                assessment = new AgentAssessment(
+                        requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
+                event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
+                securityEventRepository.save(event);
+            } catch (RuntimeException exception) {
+                event.fail();
+                securityEventRepository.save(event);
+                throw exception;
+            }
 
-        riskResponseService.respond(event, assessment.riskLevel());
-        return assessment;
+            riskResponseService.respond(event, assessment.riskLevel());
+            success = true;
+            return assessment;
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
+            throw exception;
+        } finally {
+            performanceMetrics.recordAgentExecution(
+                    eventType, System.nanoTime() - startedNanos, success, failure);
+        }
     }
 
     private AgentContext toContext(SecurityEvent event) {

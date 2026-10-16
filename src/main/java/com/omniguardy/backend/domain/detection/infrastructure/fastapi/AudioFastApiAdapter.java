@@ -13,27 +13,50 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
+@Slf4j
 public class AudioFastApiAdapter implements AudioAnalysisPort {
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     @Value("${ai.fastapi.audio.base-url}") private String baseUrl;
     @Value("${ai.fastapi.audio.endpoint}") private String endpoint;
 
+    public AudioFastApiAdapter() {
+        this(RestClient.create());
+    }
+
+    AudioFastApiAdapter(RestClient restClient) {
+        this.restClient = restClient;
+    }
+
     @Override
     public AudioAnalysis analyze(MediaFile file) {
-        MultipartBodyBuilder body = new MultipartBodyBuilder();
-        body.part("file", resource(file)).contentType(MediaType.parseMediaType("audio/wav"));
-        AudioPredictResponseDto response = restClient.post().uri(baseUrl + endpoint)
-                .contentType(MediaType.MULTIPART_FORM_DATA).body(body.build()).retrieve()
-                .body(AudioPredictResponseDto.class);
-        if (response == null) throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED);
+        long startedNanos = System.nanoTime();
+        boolean success = false;
         try {
+            MultipartBodyBuilder body = new MultipartBodyBuilder();
+            body.part("file", resource(file)).contentType(MediaType.parseMediaType("audio/wav"));
+            AudioPredictResponseDto response = restClient.post().uri(baseUrl + endpoint)
+                    .contentType(MediaType.MULTIPART_FORM_DATA).body(body.build()).retrieve()
+                    .body(AudioPredictResponseDto.class);
+            if (response == null) throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED);
             AudioEventType eventType = AudioEventType.fromPredictedClass(response.getPredictedClass());
-            return new AudioAnalysis(eventType, response.getPredictedProbability());
-        } catch (IllegalArgumentException exception) {
+            AudioAnalysis analysis = new AudioAnalysis(eventType, response.getPredictedProbability());
+            success = true;
+            return analysis;
+        } catch (RestClientException | IllegalArgumentException exception) {
             throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED, exception);
+        } finally {
+            log.info("external_api_call api=audio_fastapi eventType=AUDIO durationMs={} success={}",
+                    elapsedMillis(startedNanos), success);
         }
+    }
+
+    private double elapsedMillis(long startedNanos) {
+        double elapsed = (System.nanoTime() - startedNanos) / 1_000_000.0;
+        return Math.round(elapsed * 1_000.0) / 1_000.0;
     }
 
     private ByteArrayResource resource(MediaFile file) {
