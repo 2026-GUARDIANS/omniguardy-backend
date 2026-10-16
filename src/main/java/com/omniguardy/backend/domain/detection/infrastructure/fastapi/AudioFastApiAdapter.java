@@ -13,14 +13,23 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
 @Slf4j
 public class AudioFastApiAdapter implements AudioAnalysisPort {
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     @Value("${ai.fastapi.audio.base-url}") private String baseUrl;
     @Value("${ai.fastapi.audio.endpoint}") private String endpoint;
+
+    public AudioFastApiAdapter() {
+        this(RestClient.create());
+    }
+
+    AudioFastApiAdapter(RestClient restClient) {
+        this.restClient = restClient;
+    }
 
     @Override
     public AudioAnalysis analyze(MediaFile file) {
@@ -37,7 +46,7 @@ public class AudioFastApiAdapter implements AudioAnalysisPort {
             AudioAnalysis analysis = new AudioAnalysis(eventType, response.getPredictedProbability());
             success = true;
             return analysis;
-        } catch (IllegalArgumentException exception) {
+        } catch (RestClientException | IllegalArgumentException exception) {
             throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED, exception);
         } finally {
             log.info("external_api_call api=audio_fastapi eventType=AUDIO durationMs={} success={}",
