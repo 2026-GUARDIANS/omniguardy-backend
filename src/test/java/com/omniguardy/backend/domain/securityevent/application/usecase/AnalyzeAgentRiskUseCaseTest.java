@@ -1,6 +1,7 @@
 package com.omniguardy.backend.domain.securityevent.application.usecase;
 
 import com.omniguardy.backend.domain.detection.application.model.AudioEventType;
+import com.omniguardy.backend.domain.securityevent.application.metrics.AgentPerformanceMetrics;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import com.omniguardy.backend.domain.securityevent.application.port.out.RiskAssessmentPort;
@@ -27,8 +28,9 @@ class AnalyzeAgentRiskUseCaseTest {
     private final SecurityEventRepository repository = mock(SecurityEventRepository.class);
     private final RiskAssessmentPort port = mock(RiskAssessmentPort.class);
     private final RiskResponseService riskResponseService = mock(RiskResponseService.class);
+    private final AgentPerformanceMetrics performanceMetrics = new AgentPerformanceMetrics();
     private final AnalyzeAgentRiskUseCase useCase = new AnalyzeAgentRiskUseCase(
-            repository, port, new ObjectMapper(), riskResponseService);
+            repository, port, new ObjectMapper(), riskResponseService, performanceMetrics);
 
     @Test void includesAudioAndAllVisionDataAndCompletesExistingEvent() {
         SecurityEvent event = visionAnalyzedEvent();
@@ -52,6 +54,8 @@ class AnalyzeAgentRiskUseCaseTest {
         var order = inOrder(repository, riskResponseService);
         order.verify(repository).save(event);
         order.verify(riskResponseService).respond(event, RiskLevel.MEDIUM);
+        assertEquals(1, performanceMetrics.snapshot().agentExecutionCount());
+        assertEquals(0, performanceMetrics.snapshot().agentFailureCount());
     }
 
     @Test void failurePreservesEvidenceAndMarksFailed() {
@@ -64,6 +68,8 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals("FAILED", event.getStatus());
         verify(repository).save(event);
         verifyNoInteractions(riskResponseService);
+        assertEquals(1, performanceMetrics.snapshot().agentExecutionCount());
+        assertEquals(1, performanceMetrics.snapshot().agentFailureCount());
     }
 
     @Test void audioA21IsAlwaysLowAndPreservesAgentScore() {
@@ -130,8 +136,9 @@ class AnalyzeAgentRiskUseCaseTest {
         response.reason = "Vision evidence";
         when(service.assess(anyString())).thenReturn(response);
         ObjectMapper mapper = new ObjectMapper();
-        new AnalyzeAgentRiskUseCase(repository, new LangChainRiskAssessmentAdapter(service, mapper), mapper,
-                riskResponseService)
+        new AnalyzeAgentRiskUseCase(repository,
+                new LangChainRiskAssessmentAdapter(service, mapper, performanceMetrics), mapper,
+                riskResponseService, performanceMetrics)
                 .analyze("keypad-event");
         var captor = ArgumentCaptor.forClass(String.class);
         verify(service).assess(captor.capture());

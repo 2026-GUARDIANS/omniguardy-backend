@@ -1,5 +1,6 @@
 package com.omniguardy.backend.domain.securityevent.infrastructure.agent;
 
+import com.omniguardy.backend.domain.securityevent.application.metrics.AgentPerformanceMetrics;
 import com.omniguardy.backend.domain.securityevent.application.port.out.RiskAssessmentPort;
 import com.omniguardy.backend.domain.securityevent.domain.error.SecurityEventErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
@@ -36,11 +37,12 @@ public class OpenAiAgentConfig {
 
     @Bean
     @ConditionalOnProperty(name = "ai.agent.enabled", havingValue = "true")
-    RiskAssessmentPort riskAssessmentPort(ChatModel agentChatModel, ObjectMapper objectMapper) {
+    RiskAssessmentPort riskAssessmentPort(ChatModel agentChatModel, ObjectMapper objectMapper,
+                                          AgentPerformanceMetrics performanceMetrics) {
         RiskAssessmentAiService service = AiServices.builder(RiskAssessmentAiService.class)
                 .chatModel(agentChatModel)
                 .build();
-        return new LangChainRiskAssessmentAdapter(service, objectMapper);
+        return new LangChainRiskAssessmentAdapter(service, objectMapper, performanceMetrics);
     }
 
     @Bean
