@@ -15,6 +15,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AgentPerformanceMetricsTest {
 
     @Test
+    void calculatesAverageAndP95FromTheSameRecentWindow() {
+        AgentPerformanceMetrics metrics = new AgentPerformanceMetrics(2);
+
+        metrics.recordAgentExecution(
+                EventTriggerType.AUDIO, TimeUnit.MILLISECONDS.toNanos(100), true, null);
+        metrics.recordAgentExecution(
+                EventTriggerType.AUDIO, TimeUnit.MILLISECONDS.toNanos(100), true, null);
+        metrics.recordAgentExecution(
+                EventTriggerType.KEYPAD, TimeUnit.MILLISECONDS.toNanos(1), true, null);
+        metrics.recordAgentExecution(
+                EventTriggerType.KEYPAD, TimeUnit.MILLISECONDS.toNanos(1), true, null);
+
+        AgentPerformanceMetrics.Snapshot snapshot = metrics.snapshot();
+        assertEquals(4, snapshot.agentExecutionCount());
+        assertEquals(2, snapshot.p95SampleCount());
+        assertEquals(1.0, snapshot.agentAverageMs());
+        assertEquals(1.0, snapshot.agentP95Ms());
+        assertEquals(0.0, snapshot.eventTypeAverageMs().get(EventTriggerType.AUDIO));
+        assertEquals(1.0, snapshot.eventTypeAverageMs().get(EventTriggerType.KEYPAD));
+    }
+
+    @Test
     void recordsAggregatesAndLogsSuccessFailureAndTimeout() {
         AgentPerformanceMetrics metrics = new AgentPerformanceMetrics();
         Logger logger = (Logger) LoggerFactory.getLogger(AgentPerformanceMetrics.class);

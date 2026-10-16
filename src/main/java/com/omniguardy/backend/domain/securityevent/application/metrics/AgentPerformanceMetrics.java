@@ -18,46 +18,45 @@ import java.util.concurrent.atomic.LongAdder;
 @Slf4j
 @Component
 public class AgentPerformanceMetrics {
-    private static final int P95_SAMPLE_SIZE = 1_024;
+    private static final int DEFAULT_SAMPLE_SIZE = 1_024;
 
     private final LongAdder agentExecutionCount = new LongAdder();
-    private final LongAdder agentTotalNanos = new LongAdder();
     private final LongAdder llmCallCount = new LongAdder();
     private final LongAdder agentFailureCount = new LongAdder();
     private final LongAdder agentTimeoutCount = new LongAdder();
-    private final Map<EventTriggerType, EventMetrics> eventMetrics = new EnumMap<>(EventTriggerType.class);
-    private final ArrayDeque<Long> recentAgentDurationsNanos = new ArrayDeque<>(P95_SAMPLE_SIZE);
+    private final int sampleSize;
+    private final ArrayDeque<ExecutionSample> recentAgentExecutions;
 
     public AgentPerformanceMetrics() {
-        for (EventTriggerType eventType : EventTriggerType.values()) {
-            eventMetrics.put(eventType, new EventMetrics());
-        }
+        this(DEFAULT_SAMPLE_SIZE);
+    }
+
+    AgentPerformanceMetrics(int sampleSize) {
+        if (sampleSize <= 0) throw new IllegalArgumentException("sampleSize must be positive");
+        this.sampleSize = sampleSize;
+        this.recentAgentExecutions = new ArrayDeque<>(sampleSize);
     }
 
     public void recordAgentExecution(EventTriggerType eventType, long durationNanos,
                                      boolean success, Throwable failure) {
         agentExecutionCount.increment();
-        agentTotalNanos.add(durationNanos);
         if (!success) agentFailureCount.increment();
         boolean timeout = !success && isTimeout(failure);
         if (timeout) agentTimeoutCount.increment();
 
-        if (eventType != null) {
-            eventMetrics.get(eventType).record(durationNanos);
-        }
-        synchronized (recentAgentDurationsNanos) {
-            if (recentAgentDurationsNanos.size() == P95_SAMPLE_SIZE) {
-                recentAgentDurationsNanos.removeFirst();
+        synchronized (recentAgentExecutions) {
+            if (recentAgentExecutions.size() == sampleSize) {
+                recentAgentExecutions.removeFirst();
             }
-            recentAgentDurationsNanos.addLast(durationNanos);
+            recentAgentExecutions.addLast(new ExecutionSample(eventType, durationNanos));
         }
 
         log.info("agent_execution eventType={} durationMs={} success={} timeout={}",
                 eventType == null ? "UNKNOWN" : eventType.name(), millis(durationNanos), success, timeout);
 
         Snapshot snapshot = snapshot();
-        log.info("agent_metrics executions={} averageMs={} p95Ms={} p95SampleCount={} "
-                        + "eventTypeAverageMs={} llmCallCount={} failureCount={} timeoutCount={}",
+        log.info("agent_metrics executions={} windowAverageMs={} windowP95Ms={} windowSampleCount={} "
+                        + "eventTypeWindowAverageMs={} llmCallCount={} failureCount={} timeoutCount={}",
                 snapshot.agentExecutionCount(), snapshot.agentAverageMs(), snapshot.agentP95Ms(),
                 snapshot.p95SampleCount(), snapshot.eventTypeAverageMs(), snapshot.llmCallCount(),
                 snapshot.agentFailureCount(), snapshot.agentTimeoutCount());
@@ -73,20 +72,42 @@ public class AgentPerformanceMetrics {
 
     public Snapshot snapshot() {
         long executions = agentExecutionCount.sum();
-        Map<EventTriggerType, Double> averages = new EnumMap<>(EventTriggerType.class);
-        eventMetrics.forEach((eventType, metrics) -> averages.put(eventType, metrics.averageMs()));
-
-        long[] durations;
-        synchronized (recentAgentDurationsNanos) {
-            durations = recentAgentDurationsNanos.stream().mapToLong(Long::longValue).toArray();
+        ExecutionSample[] samples;
+        synchronized (recentAgentExecutions) {
+            samples = recentAgentExecutions.toArray(ExecutionSample[]::new);
         }
+
+        long[] durations = Arrays.stream(samples).mapToLong(ExecutionSample::durationNanos).toArray();
+        long totalNanos = Arrays.stream(durations).sum();
         Arrays.sort(durations);
         double p95Ms = durations.length == 0 ? 0.0
                 : millis(durations[(int) Math.ceil(durations.length * 0.95) - 1]);
 
-        return new Snapshot(executions, averageMs(agentTotalNanos.sum(), executions), p95Ms,
-                durations.length, Collections.unmodifiableMap(averages), llmCallCount.sum(),
+        Map<EventTriggerType, Double> averages = eventTypeAverages(samples);
+        return new Snapshot(executions, averageMs(totalNanos, samples.length), p95Ms,
+                samples.length, Collections.unmodifiableMap(averages), llmCallCount.sum(),
                 agentFailureCount.sum(), agentTimeoutCount.sum());
+    }
+
+    private Map<EventTriggerType, Double> eventTypeAverages(ExecutionSample[] samples) {
+        Map<EventTriggerType, Long> totals = new EnumMap<>(EventTriggerType.class);
+        Map<EventTriggerType, Long> counts = new EnumMap<>(EventTriggerType.class);
+        for (EventTriggerType eventType : EventTriggerType.values()) {
+            totals.put(eventType, 0L);
+            counts.put(eventType, 0L);
+        }
+        for (ExecutionSample sample : samples) {
+            if (sample.eventType() != null) {
+                totals.merge(sample.eventType(), sample.durationNanos(), Long::sum);
+                counts.merge(sample.eventType(), 1L, Long::sum);
+            }
+        }
+
+        Map<EventTriggerType, Double> averages = new EnumMap<>(EventTriggerType.class);
+        for (EventTriggerType eventType : EventTriggerType.values()) {
+            averages.put(eventType, averageMs(totals.get(eventType), counts.get(eventType)));
+        }
+        return averages;
     }
 
     private boolean isTimeout(Throwable failure) {
@@ -112,18 +133,7 @@ public class AgentPerformanceMetrics {
         return Math.round(value * 1_000.0) / 1_000.0;
     }
 
-    private static final class EventMetrics {
-        private final LongAdder count = new LongAdder();
-        private final LongAdder totalNanos = new LongAdder();
-
-        private void record(long durationNanos) {
-            count.increment();
-            totalNanos.add(durationNanos);
-        }
-
-        private double averageMs() {
-            return AgentPerformanceMetrics.averageMs(totalNanos.sum(), count.sum());
-        }
+    private record ExecutionSample(EventTriggerType eventType, long durationNanos) {
     }
 
     public record Snapshot(long agentExecutionCount, double agentAverageMs, double agentP95Ms,
