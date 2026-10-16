@@ -3,7 +3,8 @@ package com.omniguardy.backend.domain.securityevent.application.usecase;
 import com.omniguardy.backend.domain.notification.application.usecase.NotificationService;
 import com.omniguardy.backend.domain.securityevent.domain.model.RiskLevel;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
-import com.omniguardy.backend.domain.tts.application.port.out.TtsDeliveryPort;
+import com.omniguardy.backend.domain.sound.application.model.PlaySoundType;
+import com.omniguardy.backend.domain.sound.application.port.in.PlaySoundUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,11 +16,9 @@ public class RiskResponseService {
 
     private static final int MEDIUM_NOTIFICATION_LEVEL = 2;
     private static final int HIGH_NOTIFICATION_LEVEL = 3;
-    private static final String HIGH_RISK_WARNING =
-            "위험 상황이 감지되었습니다. 즉시 주변 상황을 확인해 주세요.";
 
     private final NotificationService notificationService;
-    private final TtsDeliveryPort ttsDeliveryPort;
+    private final PlaySoundUseCase playSoundUseCase;
 
     public void respond(SecurityEvent event, RiskLevel riskLevel) {
         switch (riskLevel) {
@@ -29,7 +28,7 @@ public class RiskResponseService {
             case MEDIUM -> sendPushIfRecipientExists(event, MEDIUM_NOTIFICATION_LEVEL);
             case HIGH, CRITICAL -> {
                 sendPushIfRecipientExists(event, HIGH_NOTIFICATION_LEVEL);
-                publishHighRiskWarning(event);
+                playRiskSound(event, riskLevel);
             }
         }
     }
@@ -52,11 +51,15 @@ public class RiskResponseService {
         }
     }
 
-    private void publishHighRiskWarning(SecurityEvent event) {
+    private void playRiskSound(SecurityEvent event, RiskLevel riskLevel) {
         try {
-            ttsDeliveryPort.synthesizeAndPublish(HIGH_RISK_WARNING);
+            PlaySoundType soundType = riskLevel == RiskLevel.CRITICAL
+                    ? PlaySoundType.SIREN
+                    : PlaySoundType.WARNING;
+            playSoundUseCase.play(soundType);
         } catch (RuntimeException exception) {
-            log.error("High-risk TTS warning failed: eventId={}", event.getEventId(), exception);
+            log.error("Risk sound playback failed: eventId={}, riskLevel={}",
+                    event.getEventId(), riskLevel, exception);
         }
     }
 }

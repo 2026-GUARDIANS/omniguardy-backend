@@ -4,7 +4,8 @@ import com.omniguardy.backend.domain.notification.application.usecase.Notificati
 import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType;
 import com.omniguardy.backend.domain.securityevent.domain.model.RiskLevel;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
-import com.omniguardy.backend.domain.tts.application.port.out.TtsDeliveryPort;
+import com.omniguardy.backend.domain.sound.application.model.PlaySoundType;
+import com.omniguardy.backend.domain.sound.application.port.in.PlaySoundUseCase;
 import com.omniguardy.backend.domain.user.domain.model.User;
 import org.junit.jupiter.api.Test;
 
@@ -13,14 +14,14 @@ import static org.mockito.Mockito.*;
 class RiskResponseServiceTest {
 
     private final NotificationService notificationService = mock(NotificationService.class);
-    private final TtsDeliveryPort ttsDeliveryPort = mock(TtsDeliveryPort.class);
-    private final RiskResponseService service = new RiskResponseService(notificationService, ttsDeliveryPort);
+    private final PlaySoundUseCase playSoundUseCase = mock(PlaySoundUseCase.class);
+    private final RiskResponseService service = new RiskResponseService(notificationService, playSoundUseCase);
 
     @Test
     void lowOnlyRecordsTheAssessment() {
         service.respond(event(mock(User.class)), RiskLevel.LOW);
 
-        verifyNoInteractions(notificationService, ttsDeliveryPort);
+        verifyNoInteractions(notificationService, playSoundUseCase);
     }
 
     @Test
@@ -30,54 +31,63 @@ class RiskResponseServiceTest {
         service.respond(event(user), RiskLevel.MEDIUM);
 
         verify(notificationService).sendSecurityAlert(user, 2, "AUDIO");
-        verifyNoInteractions(ttsDeliveryPort);
+        verifyNoInteractions(playSoundUseCase);
     }
 
     @Test
     void mediumWithoutRecipientSkipsPushWithoutFailing() {
         service.respond(event(null), RiskLevel.MEDIUM);
 
-        verifyNoInteractions(notificationService, ttsDeliveryPort);
+        verifyNoInteractions(notificationService, playSoundUseCase);
     }
 
     @Test
-    void highSendsPushAndPublishesTtsWarning() {
+    void highSendsPushAndPlaysWarning() {
         User user = mock(User.class);
 
         service.respond(event(user), RiskLevel.HIGH);
 
         verify(notificationService).sendSecurityAlert(user, 3, "AUDIO");
-        verify(ttsDeliveryPort).synthesizeAndPublish(
-                "위험 상황이 감지되었습니다. 즉시 주변 상황을 확인해 주세요.");
+        verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     @Test
-    void highWithoutRecipientStillPublishesTtsWarning() {
+    void highWithoutRecipientStillPlaysWarning() {
         service.respond(event(null), RiskLevel.HIGH);
 
         verifyNoInteractions(notificationService);
-        verify(ttsDeliveryPort).synthesizeAndPublish(anyString());
+        verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     @Test
-    void pushFailureDoesNotPreventHighRiskTtsWarning() {
+    void pushFailureDoesNotPreventHighRiskWarning() {
         User user = mock(User.class);
         doThrow(new IllegalStateException("FCM unavailable"))
                 .when(notificationService).sendSecurityAlert(user, 3, "AUDIO");
 
         service.respond(event(user), RiskLevel.HIGH);
 
-        verify(ttsDeliveryPort).synthesizeAndPublish(anyString());
+        verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     @Test
-    void ttsFailureDoesNotEscapeResponseHandling() {
-        doThrow(new IllegalStateException("TTS unavailable"))
-                .when(ttsDeliveryPort).synthesizeAndPublish(anyString());
+    void soundFailureDoesNotEscapeResponseHandling() {
+        doThrow(new IllegalStateException("Sound unavailable"))
+                .when(playSoundUseCase).play(any(PlaySoundType.class));
 
         service.respond(event(null), RiskLevel.HIGH);
 
-        verify(ttsDeliveryPort).synthesizeAndPublish(anyString());
+        verify(playSoundUseCase).play(PlaySoundType.WARNING);
+    }
+
+    @Test
+    void criticalSendsPushAndPlaysSiren() {
+        User user = mock(User.class);
+
+        service.respond(event(user), RiskLevel.CRITICAL);
+
+        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO");
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
     }
 
     private SecurityEvent event(User user) {
