@@ -3,6 +3,10 @@ package com.omniguardy.backend.domain.detection.application.model;
 public record VisionObservations(
         Integer trackedPersonCount,
         Boolean hasTracking,
-        Boolean hasPose
+        Boolean hasPose,
+        String analysisMode
 ) {
+    public VisionObservations(Integer trackedPersonCount, Boolean hasTracking, Boolean hasPose) {
+        this(trackedPersonCount, hasTracking, hasPose, null);
+    }
 }

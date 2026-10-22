@@ -10,7 +10,7 @@ import java.time.OffsetDateTime;
 public record SecurityEventResponse(
         Long id, String eventId, Long userId, String triggerId, EventTriggerType triggerType,
         String status, AudioEventType audioEventType, Double audioProbability,
-        String visionPrediction, Double visionConfidence, String classProbabilities,
+        String visionPrediction, Double visionConfidence, String visionAnalysisMode, String classProbabilities,
         String visionEvents, Integer personCount, Double videoDurationSeconds,
         String riskLevel, Integer riskScore, String agentReason,
         OffsetDateTime triggeredAt, OffsetDateTime visionAnalyzedAt,
@@ -19,7 +19,7 @@ public record SecurityEventResponse(
         return new SecurityEventResponse(e.getId(), e.getEventId(),
                 e.getUser() == null ? null : e.getUser().getId(), e.getTriggerId(), e.getTriggerType(),
                 e.getStatus(), e.getAudioEventType(), e.getAudioProbability(),
-                e.getVisionPrediction(), e.getVisionConfidence(), e.getClassProbabilities(),
+                e.getVisionPrediction(), e.getVisionConfidence(), e.getVisionAnalysisMode(), e.getClassProbabilities(),
                 e.getVisionEvents(), e.getPersonCount(), e.getVideoDurationSeconds(),
                 e.getRiskLevel(), e.getRiskScore(), e.getAgentReason(),
                 e.getTriggeredAt(), e.getVisionAnalyzedAt(), e.getCreatedAt(), e.getUpdatedAt());

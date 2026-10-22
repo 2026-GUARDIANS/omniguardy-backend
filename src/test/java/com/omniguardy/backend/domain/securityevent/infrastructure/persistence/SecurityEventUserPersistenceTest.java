@@ -22,7 +22,7 @@ class SecurityEventUserPersistenceTest {
             initializeAuditFields(user);
             session.persist(user);
             SecurityEvent event = SecurityEvent.builder().eventId("persisted-event")
-                    .user(user).status("AUDIO_DETECTED").build();
+                    .user(user).status("VISION_ANALYZED").visionAnalysisMode("exhibition_rules").build();
             initializeAuditFields(event);
             session.persist(event);
             transaction.commit();
@@ -31,6 +31,7 @@ class SecurityEventUserPersistenceTest {
             assertNotSame(event, loaded);
             assertEquals(user.getId(), loaded.getUser().getId());
             assertEquals("demo@example.com", loaded.getUser().getEmail());
+            assertEquals("exhibition_rules", loaded.getVisionAnalysisMode());
         }
     }
 
