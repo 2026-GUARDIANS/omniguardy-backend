@@ -54,7 +54,8 @@ public record VisionApiResponse(
     public record Observations(
             Integer trackedPersonCount,
             Boolean hasTracking,
-            Boolean hasPose
+            Boolean hasPose,
+            String analysisMode
     ) {
     }
 }

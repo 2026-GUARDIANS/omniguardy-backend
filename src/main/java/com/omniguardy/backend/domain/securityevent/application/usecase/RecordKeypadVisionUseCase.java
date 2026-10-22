@@ -35,7 +35,7 @@ public class RecordKeypadVisionUseCase implements RecordKeypadVisionInputPort {
                 .eventId(UUID.randomUUID().toString())
                 .triggerId(command.triggerId()).triggerType(EventTriggerType.KEYPAD)
                 .triggeredAt(command.triggeredAt()).videoPath(command.videoPath()).build();
-        event.updateVisionResult(command.prediction(), command.confidence(), command.classProbabilities(),
+        event.updateVisionResult(command.prediction(), command.confidence(), command.analysisMode(), command.classProbabilities(),
                 command.visionEvents(), command.personCount(), command.videoDurationSeconds(), command.analyzedAt());
         repository.save(event);
         return event.getEventId();

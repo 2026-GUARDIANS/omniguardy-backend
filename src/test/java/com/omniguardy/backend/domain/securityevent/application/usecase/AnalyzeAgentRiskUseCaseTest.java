@@ -13,6 +13,8 @@ import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Optional;
+import java.util.List;
+import java.util.Map;
 import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.LangChainRiskAssessmentAdapter;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.RiskAssessmentAiService;
@@ -87,6 +89,21 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals(24, event.getRiskScore());
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"A18, MEDIUM", "A21, LOW"})
+    void explicitTemporalTrial6KeepsExistingRiskPolicy(String prediction, RiskLevel expected) {
+        SecurityEvent event = SecurityEvent.builder().eventId("temporal-" + prediction)
+                .triggerType(EventTriggerType.AUDIO).status("VISION_ANALYZED")
+                .visionAnalysisMode("temporal_trial6").visionPrediction(prediction).visionEvents("[]").build();
+        when(repository.findByEventId(event.getEventId())).thenReturn(Optional.of(event));
+        when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.HIGH, 30, "temporal evidence"));
+
+        AgentAssessment result = useCase.analyze(event.getEventId());
+
+        assertEquals(expected, result.riskLevel());
+        verify(riskResponseService).respond(event, expected);
+    }
+
     private SecurityEvent visionAnalyzedEvent() {
         SecurityEvent event = SecurityEvent.builder().eventId("event-1").triggerType(EventTriggerType.AUDIO)
                 .audioEventType(AudioEventType.KNOCK)
@@ -153,6 +170,68 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals(10, event.getRiskScore());
         assertFalse(json.has("triggerId"));
         assertFalse(json.has("triggeredAt"));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "PERSON_DWELL_OBSERVED, LOW",
+            "CAMERA_OCCLUSION_SUSPECTED, MEDIUM"
+    })
+    void exhibitionEventDeterminesRequiredRiskLevel(String eventType, RiskLevel expected) throws Exception {
+        String events = """
+                [{"eventType":"%s","confidence":null,"detectedFrame":30,
+                  "details":{"windowSeconds":10.0,"experimental":true}}]
+                """.formatted(eventType);
+        SecurityEvent event = exhibitionEvent("exhibition-" + eventType, events);
+        when(repository.findByEventId(event.getEventId())).thenReturn(Optional.of(event));
+        when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.HIGH, 40, "event evidence"));
+
+        AgentAssessment result = useCase.analyze(event.getEventId());
+
+        assertEquals(expected, result.riskLevel());
+        assertEquals(expected.name(), event.getRiskLevel());
+        verify(riskResponseService).respond(event, expected);
+        ArgumentCaptor<AgentContext> captor = ArgumentCaptor.forClass(AgentContext.class);
+        verify(port).assess(captor.capture());
+        assertEquals("exhibition_rules", captor.getValue().vision().analysisMode());
+        assertNull(captor.getValue().vision().confidence());
+        assertNull(captor.getValue().vision().visionEvents().get(0).confidence());
+    }
+
+    @Test void exhibitionOcclusionWinsRegardlessOfEventOrder() throws Exception {
+        for (List<String> order : List.of(
+                List.of("PERSON_DWELL_OBSERVED", "CAMERA_OCCLUSION_SUSPECTED"),
+                List.of("CAMERA_OCCLUSION_SUSPECTED", "PERSON_DWELL_OBSERVED"))) {
+            reset(repository, port, riskResponseService);
+            String eventId = "both-" + order.get(0);
+            String events = new ObjectMapper().writeValueAsString(order.stream()
+                    .map(type -> Map.of("eventType", type, "detectedFrame", 1, "details", Map.of()))
+                    .toList());
+            SecurityEvent event = exhibitionEvent(eventId, events);
+            when(repository.findByEventId(eventId)).thenReturn(Optional.of(event));
+            when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.LOW, 50, "both events"));
+
+            assertEquals(RiskLevel.MEDIUM, useCase.analyze(eventId).riskLevel());
+            verify(riskResponseService).respond(event, RiskLevel.MEDIUM);
+        }
+    }
+
+    @Test void unknownAudioAnalysisModeDoesNotReachAgent() {
+        SecurityEvent event = SecurityEvent.builder().eventId("unknown-mode")
+                .triggerType(EventTriggerType.AUDIO).status("VISION_ANALYZED")
+                .visionAnalysisMode("unknown_mode").visionEvents("[]").build();
+        when(repository.findByEventId("unknown-mode")).thenReturn(Optional.of(event));
+
+        assertThrows(BusinessException.class, () -> useCase.analyze("unknown-mode"));
+
+        verifyNoInteractions(port, riskResponseService);
+        assertEquals("FAILED", event.getStatus());
+    }
+
+    private SecurityEvent exhibitionEvent(String eventId, String events) {
+        return SecurityEvent.builder().eventId(eventId).triggerType(EventTriggerType.AUDIO)
+                .status("VISION_ANALYZED").visionAnalysisMode("exhibition_rules")
+                .visionEvents(events).classProbabilities("{}").build();
     }
 }
 

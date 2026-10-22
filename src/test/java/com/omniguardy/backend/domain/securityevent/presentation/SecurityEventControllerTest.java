@@ -58,7 +58,8 @@ class SecurityEventControllerTest {
                 when(users.loadUserByUsername(email)).thenReturn(new CustomUserDetails(user));
             }
             var repository = context.getBean(SecurityEventRepository.class);
-            var event = SecurityEvent.builder().eventId("owned").status("COMPLETED").riskLevel("HIGH").riskScore(90).build();
+            var event = SecurityEvent.builder().eventId("owned").status("COMPLETED").riskLevel("HIGH").riskScore(90)
+                    .visionAnalysisMode("exhibition_rules").build();
             when(repository.findAllByUserId(anyLong(), any())).thenAnswer(invocation ->
                     new PageImpl<>(invocation.getArgument(0).equals(1L) ? List.of(event) : List.of(), invocation.getArgument(1),
                             invocation.getArgument(0).equals(1L) ? 1 : 0));
@@ -77,7 +78,8 @@ class SecurityEventControllerTest {
                     .andExpect(status().isOk()).andExpect(jsonPath("page").value(1))
                     .andExpect(jsonPath("content").isEmpty()).andExpect(jsonPath("totalElements").value(0));
             mvc.perform(get("/api/security-events/owned").header("Authorization", "Bearer token-1"))
-                    .andExpect(status().isOk()).andExpect(jsonPath("riskScore").value(90));
+                    .andExpect(status().isOk()).andExpect(jsonPath("riskScore").value(90))
+                    .andExpect(jsonPath("visionAnalysisMode").value("exhibition_rules"));
             for (String eventId : List.of("owned", "missing")) {
                 mvc.perform(get("/api/security-events/" + eventId).header("Authorization", "Bearer token-2"))
                         .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("SECURITY_EVENT_NOT_FOUND"));

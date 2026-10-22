@@ -207,7 +207,10 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
                                     .hasTracking(),
 
                             result.observations()
-                                    .hasPose()
+                                    .hasPose(),
+
+                            result.observations()
+                                    .analysisMode()
                     );
         }
 

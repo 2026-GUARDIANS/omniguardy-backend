@@ -132,9 +132,12 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
             validateVisionResult(vision, TriggerType.AUDIO);
 
+            boolean requiresRiskAssessment = vision.requiresAudioRiskAssessment();
+
             event.updateVisionResult(
                     vision.prediction(),
                     vision.confidence(),
+                    vision.analysisMode(),
                     objectMapper.writeValueAsString(
                             vision.classProbabilities()
                     ),
@@ -144,12 +147,12 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                     vision.analyzedAt()
             );
 
-            if (!vision.requiresAudioRiskAssessment()) {
+            if (!requiresRiskAssessment) {
                 event.completeWithoutRisk();
             }
             securityEventRepository.save(event);
 
-            if (vision.requiresAudioRiskAssessment()) {
+            if (requiresRiskAssessment) {
                 analyzeAgentRiskUseCase.analyze(eventId);
             }
 
@@ -209,6 +212,7 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
         String eventId = recordKeypadVisionInputPort.record(new RecordKeypadVisionInputPort.Command(
                 triggerId, triggeredAt, stored.path(), vision.prediction(), vision.confidence(),
+                vision.analysisMode(),
                 objectMapper.writeValueAsString(vision.classProbabilities()),
                 objectMapper.writeValueAsString(vision.visionEvents()), vision.personCount(),
                 vision.videoDurationSeconds(), vision.analyzedAt()));
@@ -286,16 +290,39 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
     }
 
     private void validateVisionResult(VisionAnalysis vision, TriggerType triggerType) {
-        boolean invalid = vision == null;
-        if (!invalid && triggerType == TriggerType.AUDIO) {
-            invalid = vision.behavior() == null || vision.hasVisionEvents();
-        }
-        if (!invalid && triggerType == TriggerType.KEYPAD) {
-            invalid = vision.behavior() != null;
-        }
-        if (invalid) {
+        if (vision == null) {
             throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED);
         }
+
+        boolean valid = triggerType == TriggerType.AUDIO
+                ? isValidAudioVisionResult(vision)
+                : vision.behavior() == null;
+
+        if (!valid) {
+            throw new BusinessException(DetectionErrorCode.VISION_RESPONSE_CONTRACT_INVALID);
+        }
+    }
+
+    private boolean isValidAudioVisionResult(VisionAnalysis vision) {
+        String analysisMode = vision.analysisMode();
+        if (analysisMode == null || analysisMode.isBlank() || vision.isTemporalTrial6()) {
+            return isValidTemporalTrial6Result(vision);
+        }
+        if (vision.isExhibitionRules()) {
+            return vision.visionEvents().stream()
+                    .allMatch(event -> event != null && event.isExhibitionRulesEvent());
+        }
+        return false;
+    }
+
+    private boolean isValidTemporalTrial6Result(VisionAnalysis vision) {
+        if (vision.behavior() == null || vision.prediction() == null || vision.hasVisionEvents()) {
+            return false;
+        }
+        return switch (vision.prediction().toUpperCase(java.util.Locale.ROOT)) {
+            case "N1", "A17", "A18", "A19", "A21" -> true;
+            default -> false;
+        };
     }
 }
 

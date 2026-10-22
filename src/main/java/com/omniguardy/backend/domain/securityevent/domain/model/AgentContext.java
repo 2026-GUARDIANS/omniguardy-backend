@@ -13,10 +13,21 @@ public record AgentContext(String eventId, EventTriggerType triggerType, Audio a
     }
 
     public record Audio(AudioEventType eventType, double probability) {}
-    public record Vision(String prediction, double confidence,
+    public record Vision(String prediction, Double confidence, String analysisMode,
                          Map<String, Double> classProbabilities, int personCount, List<VisionEvent> visionEvents) {
+        public Vision(String prediction, Double confidence, Map<String, Double> classProbabilities, int personCount) {
+            this(prediction, confidence, null, classProbabilities, personCount, List.of());
+        }
         public Vision(String prediction, double confidence, Map<String, Double> classProbabilities, int personCount) {
-            this(prediction, confidence, classProbabilities, personCount, List.of());
+            this(prediction, Double.valueOf(confidence), null, classProbabilities, personCount, List.of());
+        }
+        public Vision(String prediction, Double confidence, Map<String, Double> classProbabilities, int personCount,
+                      List<VisionEvent> visionEvents) {
+            this(prediction, confidence, null, classProbabilities, personCount, visionEvents);
+        }
+        public Vision(String prediction, double confidence, Map<String, Double> classProbabilities, int personCount,
+                      List<VisionEvent> visionEvents) {
+            this(prediction, Double.valueOf(confidence), null, classProbabilities, personCount, visionEvents);
         }
         public Vision {
             classProbabilities = classProbabilities == null ? Map.of() : Map.copyOf(classProbabilities);
