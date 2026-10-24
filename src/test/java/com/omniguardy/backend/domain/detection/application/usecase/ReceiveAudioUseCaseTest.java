@@ -33,8 +33,10 @@ class ReceiveAudioUseCaseTest {
     private final SecurityEventRepository repository = mock(SecurityEventRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final MockEnvironment environment = new MockEnvironment().withProperty("omniguardy.demo.user-id", "1");
-    private final ReceiveAudioUseCase useCase = new ReceiveAudioUseCase(audio, storage, camera, repository,
-            new DemoUserResolver(users, environment));
+    private final ReceiveAudioUseCase useCase = new ReceiveAudioUseCase(audio,
+            new com.omniguardy.backend.domain.detection.application.service.AudioDetectionService(
+                    storage, camera, repository, new DemoUserResolver(users, environment),
+                    mock(com.omniguardy.backend.domain.detection.application.port.out.AudioDetectionReceiptPort.class)));
     private final MediaFile file = new MediaFile("chunk.wav", "audio/wav", new byte[]{1, 2, 3});
 
     @Test void backgroundDoesNotCreateEventOrStartCamera() {
