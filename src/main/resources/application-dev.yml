@@ -32,7 +32,7 @@ mqtt:
     camera: door/camera
 
 app:
-  base-url: ${APP_BASE_URL:http://localhost:8080}
+  base-url: ${APP_BASE_URL:http://172.20.29.114:8080}
   tts:
     audio-dir: ./_vol/tts/audio
     audio-url-prefix: /audio/tts

@@ -36,8 +36,9 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.from(GlobalErrorCode.INVALID_REQUEST));
     }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleTypeMismatchException(MethodArgumentTypeMismatchException exception) {
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class,
+            org.springframework.http.converter.HttpMessageNotReadableException.class})
+    public ResponseEntity<ErrorResponse> handleTypeMismatchException(Exception exception) {
         return ResponseEntity.status(GlobalErrorCode.INVALID_REQUEST.getStatus())
                 .body(ErrorResponse.from(GlobalErrorCode.INVALID_REQUEST));
     }
