@@ -29,6 +29,22 @@ public class SecurityConfig {
     private final ErrorResponseWriter errorResponseWriter;
 
     @Bean
+    @org.springframework.core.annotation.Order(1)
+    public SecurityFilterChain audioDeviceFilterChain(HttpSecurity http,
+            @org.springframework.beans.factory.annotation.Value("${omniguardy.device.api-key:}") String apiKey) throws Exception {
+        return http.securityMatcher("/api/internal/ai/audio-result")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) ->
+                        errorResponseWriter.write(response, GlobalErrorCode.AUTHENTICATION_REQUIRED)))
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasAuthority("AUDIO_DEVICE"))
+                .addFilterBefore(new com.omniguardy.backend.global.security.auth.AudioDeviceAuthenticationFilter(
+                        apiKey, errorResponseWriter), UsernamePasswordAuthenticationFilter.class)
+                .build();
+    }
+
+    @Bean
+    @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
                 // front에서 추가(CORS 문제)
