@@ -1,18 +1,84 @@
 spring:
+  config:
+    import: "" # Do not read the development .env in production.
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 4
+      minimum-idle: 1
   jpa:
+    open-in-view: false
     hibernate.ddl-auto: validate
     properties.hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:100MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:105MB}
+      file-size-threshold: 0B
+      location: /tmp
+  http:
+    clients:
+      connect-timeout: 10s
+      read-timeout: 180s
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 20
+      min-spare: 2
+    max-connections: 64
+    max-swallow-size: 105MB
+jwt:
+  secret-key: ${JWT_SECRET_KEY}
+  access-token-expire-time: ${JWT_ACCESS_TOKEN_EXPIRE_TIME:1800000}
+  refresh-token-expire-time: ${JWT_REFRESH_TOKEN_EXPIRE_TIME:1209600000}
+mqtt:
+  broker-url: ${MQTT_BROKER_URL:tcp://mosquitto:1883}
+  client-id: ${MQTT_CLIENT_ID:omniguardy-prod}
+  username: ${MQTT_USERNAME}
+  password: ${MQTT_PASSWORD}
+  topic:
+    camera: ${MQTT_TOPIC_CAMERA:door/camera}
+omniguardy:
+  device:
+    api-key: ${AUDIO_DEVICE_API_KEY}
+  demo:
+    user-id: ${OMNIGUARDY_DEMO_USERID}
+app:
+  tts:
+    enabled: false
+  security:
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+    cookie-secure: true
+    cookie-same-site: ${COOKIE_SAME_SITE:Lax}
+firebase:
+  credentials-path: ${FIREBASE_CREDENTIALS_PATH}
+aws:
+  region: ${AWS_REGION}
+  s3:
+    bucket: ${S3_BUCKET_NAME}
+    video-prefix: ${S3_VIDEO_PREFIX:videos}
 ai:
   agent:
     enabled: ${AGENT_AI_ENABLED:true}
     openai:
-      api-key: ${OPENAI_API_KEY}
+      api-key: ${OPENAI_API_KEY:}
       model-name: ${OPENAI_MODEL_NAME:gpt-5-mini}
       timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:60}
-    # Hibernate가 DB와 주고받는 시간대(TimeZone)를 강제로 지정
-    # 한국 시간(Asia/Seoul)을 그대로 DB에 넣으면, 서버/DB/애플리케이션 시간대가 다르면 시간이 꼬이는 문제가 생김
-    # => 운영(prod)에서는 UTC 권장
+  fastapi:
+    audio:
+      base-url: ${AI_FASTAPI_AUDIO_BASE_URL}
+      endpoint: ${AI_FASTAPI_AUDIO_ENDPOINT:/predict}
+      connect-timeout-seconds: ${AUDIO_CONNECT_TIMEOUT_SECONDS:10}
+      read-timeout-seconds: ${AUDIO_READ_TIMEOUT_SECONDS:60}
+    vision:
+      base-url: ${AI_FASTAPI_VISION_BASE_URL}
+      endpoint: ${AI_FASTAPI_VISION_ENDPOINT:/analyze/vision}
+      connect-timeout-seconds: ${VISION_CONNECT_TIMEOUT_SECONDS:10}
+      read-timeout-seconds: ${VISION_READ_TIMEOUT_SECONDS:180}

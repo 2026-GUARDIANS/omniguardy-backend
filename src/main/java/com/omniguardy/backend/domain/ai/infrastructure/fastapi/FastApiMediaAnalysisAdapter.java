@@ -9,7 +9,6 @@ import com.omniguardy.backend.domain.detection.application.model.MediaFile;
 import com.omniguardy.backend.domain.detection.application.model.AudioEventType;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
@@ -65,9 +64,7 @@ public class FastApiMediaAnalysisAdapter implements MediaAnalysisPort {
 
     private MultiValueMap<String, HttpEntity<?>> multipart(MediaFile file) {
         MultipartBodyBuilder body = new MultipartBodyBuilder();
-        ByteArrayResource resource = new ByteArrayResource(file.bytes()) {
-            @Override public String getFilename() { return file.originalFilename(); }
-        };
+        var resource = new com.omniguardy.backend.domain.detection.infrastructure.fastapi.MediaResource(file);
         MediaType type = file.contentType() == null ? MediaType.APPLICATION_OCTET_STREAM
                 : MediaType.parseMediaType(file.contentType());
         body.part("file", resource).contentType(type);

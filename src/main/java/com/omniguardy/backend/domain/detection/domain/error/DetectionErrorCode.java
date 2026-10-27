@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum DetectionErrorCode implements BaseErrorCode {
+    VIDEO_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "VIDEO_UPLOAD_CONFLICT", "This trigger is already processing or has different video content."),
     EMPTY_VIDEO_FILE(HttpStatus.BAD_REQUEST, "EMPTY_VIDEO_FILE", "영상 파일이 비어 있습니다."),
     EMPTY_AUDIO_FILE(HttpStatus.BAD_REQUEST, "EMPTY_AUDIO_FILE", "오디오 파일이 비어 있습니다."),
     EVENT_ID_REQUIRED(HttpStatus.BAD_REQUEST, "EVENT_ID_REQUIRED", "eventId는 필수입니다."),

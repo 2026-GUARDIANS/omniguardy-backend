@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireVideosAfter30Days",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "videos/"},
+      "Expiration": {"Days": 30},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 7},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}
+    }
+  ]
+}

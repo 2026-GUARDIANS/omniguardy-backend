@@ -7,7 +7,6 @@ import com.omniguardy.backend.domain.detection.infrastructure.fastapi.dto.Vision
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -108,6 +107,7 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
 
                         // 중요
                         .uri(baseUrl + endpoint)
+                        .header("ngrok-skip-browser-warning", "true")
 
                         .contentType(
                                 MediaType.MULTIPART_FORM_DATA
@@ -249,19 +249,7 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
         );
     }
 
-    private ByteArrayResource resource(
-            MediaFile file
-    ) {
-
-        return new ByteArrayResource(
-                file.bytes()
-        ) {
-
-            @Override
-            public String getFilename() {
-
-                return file.originalFilename();
-            }
-        };
+    private org.springframework.core.io.Resource resource(MediaFile file) {
+        return new com.omniguardy.backend.domain.detection.infrastructure.fastapi.MediaResource(file);
     }
 }

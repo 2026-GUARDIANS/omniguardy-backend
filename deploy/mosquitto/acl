@@ -1,0 +1,7 @@
+user backend
+topic write door/camera
+topic write door/sound
+
+user raspberrypi
+topic read door/camera
+topic read door/sound

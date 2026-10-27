@@ -26,6 +26,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.tts.enabled", havingValue = "true", matchIfMissing = true)
 public class TtsService implements TtsDeliveryPort {
 
     private final MqttGateway mqttGateway;
