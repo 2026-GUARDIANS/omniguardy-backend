@@ -1,0 +1,165 @@
+name: OmniGuardy CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "EC2에 배포할까요?"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omniguardy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Gradle Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and Test
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+
+  publish:
+    name: Build and Push Docker Image
+    needs: test
+    if: >-
+      ${{
+        github.ref == 'refs/heads/main' &&
+        github.event_name != 'pull_request'
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/omniguardy-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to AWS EC2
+    needs: publish
+    if: >-
+      ${{
+        vars.ENABLE_PROD_DEPLOY == 'true' &&
+        github.ref == 'refs/heads/main' &&
+        (
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.deploy)
+        )
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Backend
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          IMAGE_REF: ${{ secrets.DOCKERHUB_USERNAME }}/omniguardy-backend:${{ github.sha }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_REF
+          command_timeout: 15m
+          script: |
+            set -eu
+
+            cd /opt/omniguardy/deploy
+
+            # 현재 운영 이미지 기억
+            OLD_IMAGE=$(sed -n 's/^BACKEND_IMAGE=//p' .env.prod | tail -n 1)
+            test -n "$OLD_IMAGE"
+
+            # 새 이미지 임시 적용
+            export BACKEND_IMAGE="$IMAGE_REF"
+
+            docker compose --env-file .env.prod \
+              -f docker-compose.prod.yml config --quiet
+
+            docker compose --env-file .env.prod \
+              -f docker-compose.prod.yml pull backend
+
+            docker compose --env-file .env.prod \
+              -f docker-compose.prod.yml up -d \
+              --no-deps --force-recreate backend
+
+            # Spring Boot 기동 확인
+            HEALTHY=0
+
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 5 \
+                http://127.0.0.1:8080/hello \
+                > /dev/null 2>&1; then
+                HEALTHY=1
+                break
+              fi
+              sleep 10
+            done
+
+            # 실패하면 이전 이미지로 복구 시도
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "Health check failed. Rolling back."
+
+              export BACKEND_IMAGE="$OLD_IMAGE"
+
+              docker compose --env-file .env.prod \
+                -f docker-compose.prod.yml up -d \
+                --no-deps --force-recreate backend
+
+              exit 1
+            fi
+
+            # 성공한 이미지 버전을 저장
+            sed -i \
+              "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$IMAGE_REF|" \
+              .env.prod
+
+            chmod 600 .env.prod
+
+            docker compose --env-file .env.prod \
+              -f docker-compose.prod.yml ps backend
+
+            echo "OmniGuardy deployment successful."
