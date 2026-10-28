@@ -6,7 +6,15 @@ public interface RecordKeypadVisionInputPort {
     String record(Command command);
 
     record Command(String triggerId, OffsetDateTime triggeredAt, String videoPath,
-                   String prediction, Double confidence, String classProbabilities,
+                   String prediction, Double confidence, String analysisMode, String classProbabilities,
                    String visionEvents, Integer personCount, Double videoDurationSeconds,
-                   OffsetDateTime analyzedAt) {}
+                   OffsetDateTime analyzedAt) {
+        public Command(String triggerId, OffsetDateTime triggeredAt, String videoPath,
+                       String prediction, Double confidence, String classProbabilities,
+                       String visionEvents, Integer personCount, Double videoDurationSeconds,
+                       OffsetDateTime analyzedAt) {
+            this(triggerId, triggeredAt, videoPath, prediction, confidence, null, classProbabilities,
+                    visionEvents, personCount, videoDurationSeconds, analyzedAt);
+        }
+    }
 }

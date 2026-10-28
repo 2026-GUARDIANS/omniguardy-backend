@@ -1,0 +1,98 @@
+name: omniguardy-prod
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?Set a Docker Hub image tag}
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      FIREBASE_CREDENTIALS_PATH: /run/secrets/firebase-service-account.json
+      AWS_EC2_METADATA_V1_DISABLED: "true"
+      MYSQL_ROOT_PASSWORD: "" # The backend does not need the MySQL root credential.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - audio-data:/app/uploads/audio
+      - type: bind
+        source: ${FIREBASE_CREDENTIALS_HOST_PATH:?Set Firebase JSON host path}
+        target: /run/secrets/firebase-service-account.json
+        read_only: true
+        bind:
+          create_host_path: false
+    # Disk-backed temporary files: do not use tmpfs for 100MB video uploads on a small EC2.
+    mem_limit: 512m
+    memswap_limit: 768m
+    pids_limit: 160
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/hello"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  mysql:
+    image: mysql:8.0.43
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-omniguardy_db}
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      TZ: UTC
+    command:
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=20
+      - --performance-schema=OFF
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    mem_limit: 384m
+    memswap_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u \"$$MYSQL_USER\" -D \"$$MYSQL_DATABASE\" -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+    logging: *logging
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    restart: unless-stopped
+    # External Pi uses an SSH tunnel/VPN. No Internet-facing plaintext listener.
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - type: bind
+        source: ./secrets/mosquitto.passwd
+        target: /mosquitto/config/passwords
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - mqtt-data:/mosquitto/data
+    mem_limit: 64m
+    healthcheck:
+      # Listener readiness only; credential/ACL behavior is checked separately before deployment.
+      test: ["CMD-SHELL", "kill -0 1 && test -r /mosquitto/config/passwords && nc -z 127.0.0.1 1883"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+volumes:
+  mysql-data:
+  audio-data:
+  mqtt-data:

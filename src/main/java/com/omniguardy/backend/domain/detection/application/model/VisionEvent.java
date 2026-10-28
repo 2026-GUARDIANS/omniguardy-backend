@@ -20,4 +20,16 @@ public record VisionEvent(
     public boolean isHighRiskKeypadEvent() {
         return isSilentSignal() || isRearCloseApproachSuspected();
     }
+
+    public boolean isPersonDwellObserved() {
+        return "PERSON_DWELL_OBSERVED".equalsIgnoreCase(eventType);
+    }
+
+    public boolean isCameraOcclusionSuspected() {
+        return "CAMERA_OCCLUSION_SUSPECTED".equalsIgnoreCase(eventType);
+    }
+
+    public boolean isExhibitionRulesEvent() {
+        return isPersonDwellObserved() || isCameraOcclusionSuspected();
+    }
 }

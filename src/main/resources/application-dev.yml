@@ -1,4 +1,8 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
+  flyway:
+    enabled: false # Preserve the previous dev behavior: Hibernate update manages local schema.
   servlet:
     multipart:
       max-file-size: 500MB
@@ -25,14 +29,14 @@ jwt:
   refresh-token-expire-time: 1209600000  # 14일
 
 mqtt:
-  broker-url: tcp://172.30.1.94:1883 #라즈베리파이 ip
+  broker-url: tcp://10.165.196.174:1883 #라즈베리파이 ip
   client-id: omniguardy-backend
   topic:
     tts: door/tts
     camera: door/camera
 
 app:
-  base-url: ${APP_BASE_URL:http://localhost:8080}
+  base-url: ${APP_BASE_URL:http://172.20.29.114:8080}
   tts:
     audio-dir: ./_vol/tts/audio
     audio-url-prefix: /audio/tts

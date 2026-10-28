@@ -77,6 +77,9 @@ public class SecurityEvent extends BaseTimeEntity {
     @Column(name = "vision_confidence")
     private Double visionConfidence;
 
+    @Column(name = "vision_analysis_mode", length = 40)
+    private String visionAnalysisMode;
+
     @Lob
     @Column(name = "class_probabilities", columnDefinition = "TEXT")
     private String classProbabilities;
@@ -140,6 +143,7 @@ public class SecurityEvent extends BaseTimeEntity {
     public void updateVisionResult(
             String prediction,
             Double confidence,
+            String analysisMode,
             String classProbabilities,
             String visionEvents,
             Integer personCount,
@@ -148,12 +152,26 @@ public class SecurityEvent extends BaseTimeEntity {
     ) {
         this.visionPrediction = prediction;
         this.visionConfidence = confidence;
+        this.visionAnalysisMode = analysisMode;
         this.classProbabilities = classProbabilities;
         this.visionEvents = visionEvents;
         this.personCount = personCount;
         this.videoDurationSeconds = videoDurationSeconds;
         this.visionAnalyzedAt = analyzedAt;
         this.status = SecurityEventStatus.VISION_ANALYZED.name();
+    }
+
+    public void updateVisionResult(
+            String prediction,
+            Double confidence,
+            String classProbabilities,
+            String visionEvents,
+            Integer personCount,
+            Double videoDurationSeconds,
+            OffsetDateTime analyzedAt
+    ) {
+        updateVisionResult(prediction, confidence, null, classProbabilities, visionEvents,
+                personCount, videoDurationSeconds, analyzedAt);
     }
 
     public void updateAgentResult(

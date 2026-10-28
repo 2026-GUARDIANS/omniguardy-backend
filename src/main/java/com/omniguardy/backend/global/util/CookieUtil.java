@@ -13,10 +13,15 @@ public class CookieUtil {
             String refreshToken,
             long maxAgeSeconds
     ) {
+        addRefreshTokenCookie(response, refreshToken, maxAgeSeconds, false, "Lax");
+    }
+
+    public static void addRefreshTokenCookie(HttpServletResponse response, String refreshToken,
+            long maxAgeSeconds, boolean secure, String sameSite) {
         ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
                 .httpOnly(true)
-                .secure(false) // HTTPS 배포 시 true
-                .sameSite("Lax")
+                .secure(secure) // HTTPS 배포 시 true
+                .sameSite(sameSite)
                 .path("/")
                 .maxAge(maxAgeSeconds)
                 .build();
@@ -25,10 +30,14 @@ public class CookieUtil {
     }
 
     public static void deleteRefreshTokenCookie(HttpServletResponse response) {
+        deleteRefreshTokenCookie(response, false, "Lax");
+    }
+
+    public static void deleteRefreshTokenCookie(HttpServletResponse response, boolean secure, String sameSite) {
         ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(secure)
+                .sameSite(sameSite)
                 .path("/")
                 .maxAge(0)
                 .build();

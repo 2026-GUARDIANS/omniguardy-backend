@@ -48,3 +48,17 @@ src/main/resources/firebase/firebase-service-account.json
 .env
 .env.*
 !.env.example
+
+docs/
+
+# Production credentials and local deployment validation
+deploy/.env.prod
+!deploy/.env.prod.example
+deploy/.env.*.local
+deploy/secrets/
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/*service-account*.json
+**/*google*key*.json

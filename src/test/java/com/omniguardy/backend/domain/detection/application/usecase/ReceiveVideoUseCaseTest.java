@@ -18,6 +18,60 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class ReceiveVideoUseCaseTest {
+    @Test void s3FailureKeepsVisionCheckpointAndReleasesClaim() {
+        var journal = mock(VideoUploadJournal.class);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        stubStorageAndVision(List.of());
+        when(storage.saveVideo(anyString(), any())).thenThrow(new IllegalStateException("S3 unavailable"));
+        assertThrows(IllegalStateException.class, () -> useCase.receive(file, keypad()));
+        verify(journal).analyzed(eq(upload), any());
+        verify(journal, never()).stored(any(), any());
+        verify(journal, never()).complete(any(), any());
+        verify(journal).release(upload);
+        verifyNoInteractions(repository, agent);
+    }
+
+    @Test void checkpointRetryDoesNotRepeatVisionOrS3() {
+        var journal = mock(VideoUploadJournal.class);
+        var vision = new VisionAnalysis("trg-keypad", TriggerType.KEYPAD, null, time, time,
+                null, null, List.of(), null);
+        var upload = new VideoUploadJournal.Upload("upload", vision,
+                new MediaStoragePort.StoredMedia("v.mp4", "videos/key"), null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        var result = useCase.receive(file, keypad());
+        assertNull(result.eventId());
+        verifyNoInteractions(visionPort, storage, repository, agent);
+        verify(journal).complete(upload, result);
+        verify(journal).release(upload);
+    }
+
+    @Test void completedRetryReturnsOriginalResponseWithoutExternalEffects() {
+        var journal = mock(VideoUploadJournal.class);
+        var result = new VideoReceipt("original", "v.mp4", null);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, result);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        assertSame(result, useCase.receive(file, keypad()));
+        verifyNoInteractions(visionPort, storage, repository, agent);
+        verify(journal).release(upload);
+    }
+
+    @Test void databaseFailureAfterS3KeepsStoredCheckpointForRetry() {
+        var journal = mock(VideoUploadJournal.class);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        stubStorageAndVision(List.of(new VisionEvent("OTHER_EVENT", 0.9, 1, Map.of())));
+        when(repository.save(any())).thenThrow(new IllegalStateException("DB unavailable"));
+        assertThrows(IllegalStateException.class, () -> useCase.receive(file, keypad()));
+        verify(journal).stored(eq(upload), any());
+        verify(journal, never()).complete(any(), any());
+        verify(journal).release(upload);
+        verifyNoInteractions(agent);
+    }
     private final VisionAnalysisPort visionPort = mock(VisionAnalysisPort.class);
     private final MediaStoragePort storage = mock(MediaStoragePort.class);
     private final SecurityEventRepository repository = mock(SecurityEventRepository.class);
@@ -121,8 +175,8 @@ class ReceiveVideoUseCaseTest {
         assertThrows(IllegalStateException.class, () -> useCase.receive(file,
                 new VideoTriggerContext("audio", null, TriggerType.AUDIO, null, null)));
         assertEquals("FAILED", event.getStatus());
-        assertEquals("video-path", event.getVideoPath());
-        verifyNoInteractions(agent);
+        assertNull(event.getVideoPath());
+        verifyNoInteractions(storage, agent);
     }
 
     private VideoTriggerContext keypad() {
@@ -143,6 +197,32 @@ class ReceiveVideoUseCaseTest {
         verifyNoInteractions(agent);
     }
 
+    @Test void explicitTemporalTrial6A18InvokesAgent() {
+        stubTemporalTrial6("A18");
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        useCase.receive(file, new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString()));
+
+        assertEquals("temporal_trial6", event.getVisionAnalysisMode());
+        assertEquals("A18", event.getVisionPrediction());
+        verify(agent).analyze("audio-event");
+    }
+
+    @Test void unknownTemporalPredictionIsContractError() {
+        stubStorageAndVision("FUTURE_CLASS", List.of());
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> useCase.receive(file,
+                new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString())));
+
+        assertEquals(com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode.VISION_RESPONSE_CONTRACT_INVALID,
+                exception.getErrorCode());
+        assertEquals("FAILED", event.getStatus());
+        verifyNoInteractions(agent);
+    }
+
     @Test void audioVisionEventsViolateTriggerSpecificContract() {
         stubStorageAndVision(List.of(new VisionEvent("SILENT_SIGNAL", 0.8, 10, Map.of())));
         SecurityEvent event = SecurityEvent.builder().eventId("audio-event")
@@ -150,6 +230,68 @@ class ReceiveVideoUseCaseTest {
         when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
         assertThrows(BusinessException.class, () -> useCase.receive(file,
                 new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString())));
+        assertEquals("FAILED", event.getStatus());
+        verifyNoInteractions(agent);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "PERSON_DWELL_OBSERVED", "CAMERA_OCCLUSION_SUSPECTED"
+    })
+    void exhibitionAudioEventsAreSavedBeforeAgentAssessment(String eventType) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("windowSeconds", 10.0);
+        details.put("experimental", true);
+        stubExhibition(List.of(new VisionEvent(eventType, null, 120, details)));
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        useCase.receive(file, new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString()));
+
+        assertEquals("exhibition_rules", event.getVisionAnalysisMode());
+        assertNull(event.getVisionPrediction());
+        assertNull(event.getVisionConfidence());
+        assertTrue(event.getVisionEvents().contains("\"confidence\":null"));
+        assertEquals(true, mapper.readTree(event.getVisionEvents()).get(0).get("details").get("experimental").asBoolean());
+        var order = inOrder(repository, agent);
+        order.verify(repository, times(2)).save(event);
+        order.verify(agent).analyze("audio-event");
+    }
+
+    @Test void exhibitionEventsAreOrderIndependentAndInvokeAgent() {
+        stubExhibition(List.of(
+                new VisionEvent("CAMERA_OCCLUSION_SUSPECTED", null, 20, Map.of()),
+                new VisionEvent("PERSON_DWELL_OBSERVED", null, 10, Map.of())));
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        useCase.receive(file, new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString()));
+
+        verify(agent).analyze("audio-event");
+    }
+
+    @Test void emptyExhibitionEventsCompleteWithoutRisk() {
+        stubExhibition(List.of());
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        useCase.receive(file, new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString()));
+
+        assertEquals("COMPLETED", event.getStatus());
+        assertNull(event.getRiskLevel());
+        verifyNoInteractions(agent);
+    }
+
+    @Test void unknownExhibitionEventIsContractError() {
+        stubExhibition(List.of(new VisionEvent("UNKNOWN_AUDIO_EVENT", null, 1, Map.of())));
+        SecurityEvent event = audioEvent();
+        when(repository.findByEventId("audio-event")).thenReturn(Optional.of(event));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> useCase.receive(file,
+                new VideoTriggerContext("audio-event", null, TriggerType.AUDIO, null, time.toString())));
+
+        assertEquals(com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode.VISION_RESPONSE_CONTRACT_INVALID,
+                exception.getErrorCode());
         assertEquals("FAILED", event.getStatus());
         verifyNoInteractions(agent);
     }
@@ -175,6 +317,34 @@ class ReceiveVideoUseCaseTest {
                         ? new VisionBehavior(prediction, "behavior", 0.46, Map.of(prediction, 0.46)) : null,
                 events, new VisionObservations(1, true, true));
         });
+    }
+
+    private void stubExhibition(List<VisionEvent> events) {
+        when(storage.saveVideo(anyString(), any())).thenReturn(new MediaStoragePort.StoredMedia("v.mp4", "video-path"));
+        when(visionPort.analyze(any(), any())).thenAnswer(invocation -> {
+            VideoTriggerContext context = invocation.getArgument(1);
+            return new VisionAnalysis(
+                    context.triggerId(), context.triggerType(), context.securityEventId(), time, time.plusSeconds(10),
+                    new VisionVideoInfo("v.mp4", 10.0, 30.0, 300), null, events,
+                    new VisionObservations(1, true, true, "exhibition_rules"));
+        });
+    }
+
+    private void stubTemporalTrial6(String prediction) {
+        when(storage.saveVideo(anyString(), any())).thenReturn(new MediaStoragePort.StoredMedia("v.mp4", "video-path"));
+        when(visionPort.analyze(any(), any())).thenAnswer(invocation -> {
+            VideoTriggerContext context = invocation.getArgument(1);
+            return new VisionAnalysis(
+                    context.triggerId(), context.triggerType(), context.securityEventId(), time, time.plusSeconds(10),
+                    new VisionVideoInfo("v.mp4", 10.0, 30.0, 300),
+                    new VisionBehavior(prediction, "behavior", 0.46, Map.of(prediction, 0.46)), List.of(),
+                    new VisionObservations(1, true, true, "temporal_trial6"));
+        });
+    }
+
+    private SecurityEvent audioEvent() {
+        return SecurityEvent.builder().eventId("audio-event").triggeredAt(time)
+                .status("CAMERA_REQUESTED").build();
     }
 
     private SecurityEvent savedEvent() {

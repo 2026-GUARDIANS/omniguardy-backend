@@ -1,6 +1,7 @@
 package com.omniguardy.backend.domain.securityevent.infrastructure.agent;
 
 import com.omniguardy.backend.domain.detection.application.model.AudioEventType;
+import com.omniguardy.backend.domain.securityevent.application.metrics.AgentPerformanceMetrics;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 
 import com.omniguardy.backend.domain.securityevent.domain.model.AgentContext;
@@ -23,12 +24,15 @@ class LangChainRiskAssessmentAdapterTest {
         response.riskScore = 85;
         response.reason = "KNOCK 0.99 및 A18 0.46을 근거로 판단";
         when(service.assess(contains("classProbabilities"))).thenReturn(response);
-        var adapter = new LangChainRiskAssessmentAdapter(service, new ObjectMapper());
+        AgentPerformanceMetrics metrics = new AgentPerformanceMetrics();
+        var adapter = new LangChainRiskAssessmentAdapter(
+                service, new ObjectMapper(), metrics);
         var result = adapter.assess(new AgentContext("event", EventTriggerType.AUDIO,
                 new AgentContext.Audio(AudioEventType.KNOCK, 0.99),
                 new AgentContext.Vision("A18", 0.46, Map.of("A18", 0.46), 0)));
         assertEquals(RiskLevel.HIGH, result.riskLevel());
         assertEquals(85, result.riskScore());
+        assertEquals(1, metrics.snapshot().llmCallCount());
     }
 
     @Test void rejectsInvalidRiskScore() {
@@ -38,10 +42,13 @@ class LangChainRiskAssessmentAdapterTest {
         response.riskScore = 101;
         response.reason = "洹쇨굅";
         when(service.assess(anyString())).thenReturn(response);
-        var adapter = new LangChainRiskAssessmentAdapter(service, new ObjectMapper());
+        AgentPerformanceMetrics metrics = new AgentPerformanceMetrics();
+        var adapter = new LangChainRiskAssessmentAdapter(
+                service, new ObjectMapper(), metrics);
         assertThrows(BusinessException.class, () -> adapter.assess(new AgentContext("event", EventTriggerType.AUDIO,
                 new AgentContext.Audio(AudioEventType.KNOCK, 1),
                 new AgentContext.Vision("A18", 1, Map.of(), 0))));
+        assertEquals(1, metrics.snapshot().llmCallCount());
     }
 }
 

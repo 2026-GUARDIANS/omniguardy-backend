@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum DetectionSuccessCode implements BaseSuccessCode {
+    AUDIO_RESULT_RECEIVED(HttpStatus.OK, "AUDIO_RESULT_RECEIVED", "Audio result received."),
     AUDIO_RECEIVED(HttpStatus.OK, "AUDIO_RECEIVED", "오디오 파일 수신에 성공했습니다."),
     VIDEO_ANALYZED(HttpStatus.OK, "VIDEO_ANALYZED", "영상 분석이 완료되었습니다.");
     private final HttpStatus status;

@@ -23,6 +23,9 @@ public record VisionAnalysis(
 
 ) {
 
+    public static final String EXHIBITION_RULES = "exhibition_rules";
+    public static final String TEMPORAL_TRIAL6 = "temporal_trial6";
+
     public VisionAnalysis {
 
         visionEvents =
@@ -84,7 +87,30 @@ public record VisionAnalysis(
                 .anyMatch(VisionEvent::isHighRiskKeypadEvent);
     }
 
+    public String analysisMode() {
+        return observations == null ? null : observations.analysisMode();
+    }
+
+    public boolean isExhibitionRules() {
+        return EXHIBITION_RULES.equalsIgnoreCase(analysisMode());
+    }
+
+    public boolean isTemporalTrial6() {
+        return TEMPORAL_TRIAL6.equalsIgnoreCase(analysisMode());
+    }
+
+    public boolean hasPersonDwellObserved() {
+        return visionEvents.stream().anyMatch(VisionEvent::isPersonDwellObserved);
+    }
+
+    public boolean hasCameraOcclusionSuspected() {
+        return visionEvents.stream().anyMatch(VisionEvent::isCameraOcclusionSuspected);
+    }
+
     public boolean requiresAudioRiskAssessment() {
+        if (isExhibitionRules()) {
+            return hasPersonDwellObserved() || hasCameraOcclusionSuspected();
+        }
         if (behavior == null || behavior.prediction() == null) {
             return false;
         }

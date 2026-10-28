@@ -1,5 +1,6 @@
 package com.omniguardy.backend.domain.securityevent.application.usecase;
 
+import com.omniguardy.backend.domain.securityevent.application.metrics.AgentPerformanceMetrics;
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
 import com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository;
 import com.omniguardy.backend.domain.securityevent.application.port.out.RiskAssessmentPort;
@@ -21,40 +22,58 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class AnalyzeAgentRiskUseCase {
+    private static final String EXHIBITION_RULES = "exhibition_rules";
+    private static final String TEMPORAL_TRIAL6 = "temporal_trial6";
     private final SecurityEventRepository securityEventRepository;
     private final RiskAssessmentPort riskAssessmentPort;
     private final ObjectMapper objectMapper;
     private final RiskResponseService riskResponseService;
+    private final AgentPerformanceMetrics performanceMetrics;
 
     public AgentAssessment analyze(String eventId) {
-        SecurityEvent event = securityEventRepository.findByEventId(eventId)
-                .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
-        if (!event.isVisionAnalyzed()) {
-            throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
-        }
-        AgentAssessment assessment;
+        long startedNanos = System.nanoTime();
+        EventTriggerType eventType = null;
+        boolean success = false;
+        Throwable failure = null;
         try {
-            AgentContext context = toContext(event);
-            RiskLevel requiredRiskLevel = requiredRiskLevel(context);
-            AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
-            assessment = new AgentAssessment(
-                    requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
-            event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
-            securityEventRepository.save(event);
-        } catch (RuntimeException exception) {
-            event.fail();
-            securityEventRepository.save(event);
-            throw exception;
-        }
+            SecurityEvent event = securityEventRepository.findByEventId(eventId)
+                    .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
+            eventType = event.getTriggerType();
+            if (!event.isVisionAnalyzed()) {
+                throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
+            }
+            AgentAssessment assessment;
+            try {
+                AgentContext context = toContext(event);
+                RiskLevel requiredRiskLevel = requiredRiskLevel(context);
+                AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
+                assessment = new AgentAssessment(
+                        requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
+                event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
+                securityEventRepository.save(event);
+            } catch (RuntimeException exception) {
+                event.fail();
+                securityEventRepository.save(event);
+                throw exception;
+            }
 
-        riskResponseService.respond(event, assessment.riskLevel());
-        return assessment;
+            riskResponseService.respond(event, assessment.riskLevel());
+            success = true;
+            return assessment;
+        } catch (RuntimeException | Error exception) {
+            failure = exception;
+            throw exception;
+        } finally {
+            performanceMetrics.recordAgentExecution(
+                    eventType, System.nanoTime() - startedNanos, success, failure);
+        }
     }
 
     private AgentContext toContext(SecurityEvent event) {
         return new AgentContext(event.getEventId(), event.getTriggerType(),
                 new AgentContext.Audio(event.getAudioEventType(), value(event.getAudioProbability())),
-                new AgentContext.Vision(event.getVisionPrediction(), value(event.getVisionConfidence()),
+                new AgentContext.Vision(event.getVisionPrediction(), event.getVisionConfidence(),
+                        event.getVisionAnalysisMode(),
                         probabilities(event.getClassProbabilities()),
                         event.getPersonCount() == null ? 0 : event.getPersonCount(), visionEvents(event.getVisionEvents())));
     }
@@ -86,8 +105,21 @@ public class AnalyzeAgentRiskUseCase {
         }
 
         if (context.triggerType() == EventTriggerType.AUDIO) {
-            if ("A18".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.MEDIUM;
-            if ("A21".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.LOW;
+            String analysisMode = context.vision().analysisMode();
+            if (EXHIBITION_RULES.equalsIgnoreCase(analysisMode)) {
+                boolean hasOcclusion = context.vision().visionEvents().stream()
+                        .anyMatch(this::isCameraOcclusionSuspected);
+                boolean hasDwell = context.vision().visionEvents().stream()
+                        .anyMatch(this::isPersonDwellObserved);
+                if (hasOcclusion) return RiskLevel.MEDIUM;
+                if (hasDwell) return RiskLevel.LOW;
+                throw new BusinessException(SecurityEventErrorCode.INVALID_AGENT_CONTEXT);
+            }
+            if (analysisMode == null || analysisMode.isBlank()
+                    || TEMPORAL_TRIAL6.equalsIgnoreCase(analysisMode)) {
+                if ("A18".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.MEDIUM;
+                if ("A21".equalsIgnoreCase(context.vision().prediction())) return RiskLevel.LOW;
+            }
         }
 
         throw new BusinessException(SecurityEventErrorCode.INVALID_AGENT_CONTEXT);
@@ -96,6 +128,14 @@ public class AnalyzeAgentRiskUseCase {
     private boolean isHighRiskKeypadEvent(AgentContext.VisionEvent event) {
         return event != null && ("SILENT_SIGNAL".equalsIgnoreCase(event.eventType())
                 || "REAR_CLOSE_APPROACH_SUSPECTED".equalsIgnoreCase(event.eventType()));
+    }
+
+    private boolean isPersonDwellObserved(AgentContext.VisionEvent event) {
+        return event != null && "PERSON_DWELL_OBSERVED".equalsIgnoreCase(event.eventType());
+    }
+
+    private boolean isCameraOcclusionSuspected(AgentContext.VisionEvent event) {
+        return event != null && "CAMERA_OCCLUSION_SUSPECTED".equalsIgnoreCase(event.eventType());
     }
 }
 

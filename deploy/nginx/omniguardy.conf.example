@@ -1,0 +1,29 @@
+# Host Nginx. Replace api.example.com and certificate paths after issuing a certificate.
+# http {} context: limit simultaneous video processing on a small host.
+limit_conn_zone $server_name zone=video_uploads:1m;
+
+server {
+    listen 80;
+    server_name api.example.com;
+    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 105m;
+    client_body_timeout 180s;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location = /api/edge/video {
+        limit_conn video_uploads 1;
+        limit_conn_status 429;
+        include /etc/nginx/snippets/omniguardy-proxy.conf;
+    }
+    location / {
+        include /etc/nginx/snippets/omniguardy-proxy.conf;
+    }
+}

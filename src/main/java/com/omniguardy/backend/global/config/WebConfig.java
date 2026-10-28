@@ -8,6 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.nio.file.Path;
 
 @Configuration
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.tts.enabled", havingValue = "true", matchIfMissing = true)
 public class WebConfig implements WebMvcConfigurer {
 
     @Value("${app.tts.audio-dir}")

@@ -218,6 +218,40 @@ class VisionFastApiAdapterTest {
         server.verify();
     }
 
+    @Test
+    void mapsExhibitionRulesWithNullableConfidenceAndPreservesDetails() {
+        respond("""
+                {"status":"success","result":{
+                  "analyzedAt":"2026-09-23T12:00:10+09:00",
+                  "behavior":null,
+                  "visionEvents":[
+                    {"eventType":"PERSON_DWELL_OBSERVED","confidence":null,"detectedFrame":120,
+                     "details":{"trackId":7,"thresholdSeconds":3.0,"cumulativeObservedSeconds":5.1,
+                       "continuousObservedSeconds":4.2,"firstLastSpanSeconds":5.4,"maxDetectionGapSeconds":0.4,
+                       "identityContinuity":true,"windowSeconds":10.0,"experimental":true}},
+                    {"eventType":"CAMERA_OCCLUSION_SUSPECTED","confidence":null,"detectedFrame":180,
+                     "details":{"startSeconds":4.0,"endSeconds":7.2,"durationSeconds":3.2,
+                       "edgeDensityThreshold":0.1,"laplacianThreshold":25.0,"minSustainedSeconds":2.0,
+                       "windowSeconds":10.0,"experimental":true}}],
+                  "observations":{"trackedPersonCount":1,"hasTracking":true,"hasPose":false,
+                    "analysisMode":"exhibition_rules"}}}
+                """);
+
+        VisionAnalysis analysis = adapter.analyze(file, context);
+
+        assertEquals("exhibition_rules", analysis.analysisMode());
+        assertNull(analysis.behavior());
+        assertEquals(2, analysis.visionEvents().size());
+        assertNull(analysis.visionEvents().get(0).confidence());
+        assertEquals(120, analysis.visionEvents().get(0).detectedFrame());
+        assertEquals(9, analysis.visionEvents().get(0).details().size());
+        assertEquals(7, analysis.visionEvents().get(0).details().get("trackId"));
+        assertEquals(8, analysis.visionEvents().get(1).details().size());
+        assertEquals(3.2, analysis.visionEvents().get(1).details().get("durationSeconds"));
+        assertTrue(analysis.requiresAudioRiskAssessment());
+        server.verify();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"REAR_CLOSE_APPROACH_SUSPECTED", "FUTURE_EVENT"})
     void preservesFlexibleEventTypesAndDetails(String eventType) {

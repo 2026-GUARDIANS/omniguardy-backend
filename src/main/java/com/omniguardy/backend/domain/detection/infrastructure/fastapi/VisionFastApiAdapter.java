@@ -7,7 +7,6 @@ import com.omniguardy.backend.domain.detection.infrastructure.fastapi.dto.Vision
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -19,8 +18,10 @@ import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.net.http.HttpClient;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
+@Slf4j
 public class VisionFastApiAdapter implements VisionAnalysisPort {
 
     private RestClient restClient;
@@ -54,6 +55,8 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
             MediaFile file,
             VideoTriggerContext triggerContext
     ) {
+        long startedNanos = System.nanoTime();
+        boolean success = false;
 
         MultiValueMap<String, Object> body =
                 new LinkedMultiValueMap<>();
@@ -104,6 +107,7 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
 
                         // 중요
                         .uri(baseUrl + endpoint)
+                        .header("ngrok-skip-browser-warning", "true")
 
                         .contentType(
                                 MediaType.MULTIPART_FORM_DATA
@@ -122,12 +126,23 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
                 throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED);
             }
 
-            return toVisionAnalysis(response, triggerContext);
+            VisionAnalysis analysis = toVisionAnalysis(response, triggerContext);
+            success = true;
+            return analysis;
         } catch (BusinessException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED, exception);
+        } finally {
+            log.info("external_api_call api=vision_fastapi eventType={} durationMs={} success={}",
+                    triggerContext.triggerType().name(),
+                    elapsedMillis(startedNanos), success);
         }
+    }
+
+    private double elapsedMillis(long startedNanos) {
+        double elapsed = (System.nanoTime() - startedNanos) / 1_000_000.0;
+        return Math.round(elapsed * 1_000.0) / 1_000.0;
     }
 
     private VisionAnalysis toVisionAnalysis(
@@ -192,7 +207,10 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
                                     .hasTracking(),
 
                             result.observations()
-                                    .hasPose()
+                                    .hasPose(),
+
+                            result.observations()
+                                    .analysisMode()
                     );
         }
 
@@ -231,19 +249,7 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
         );
     }
 
-    private ByteArrayResource resource(
-            MediaFile file
-    ) {
-
-        return new ByteArrayResource(
-                file.bytes()
-        ) {
-
-            @Override
-            public String getFilename() {
-
-                return file.originalFilename();
-            }
-        };
+    private org.springframework.core.io.Resource resource(MediaFile file) {
+        return new com.omniguardy.backend.domain.detection.infrastructure.fastapi.MediaResource(file);
     }
 }

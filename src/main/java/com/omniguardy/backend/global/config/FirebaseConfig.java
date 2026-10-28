@@ -10,13 +10,21 @@ import java.io.InputStream;
 
 @Configuration
 public class FirebaseConfig {
+    @org.springframework.beans.factory.annotation.Value("${firebase.credentials-path:}")
+    private String credentialsPath = "";
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.core.env.Environment environment;
 
     @PostConstruct
     public void initialize() {
         try {
-            InputStream serviceAccount = getClass()
+            if (environment != null && environment.matchesProfiles("prod") && credentialsPath.isBlank()) {
+                throw new IllegalStateException("FIREBASE_CREDENTIALS_PATH must reference an external readable JSON file in prod");
+            }
+            try (InputStream serviceAccount = credentialsPath.isBlank() ? getClass()
                     .getClassLoader()
-                    .getResourceAsStream("firebase/firebase-service-account.json");
+                    .getResourceAsStream("firebase/firebase-service-account.json")
+                    : java.nio.file.Files.newInputStream(java.nio.file.Path.of(credentialsPath))) {
 
             if (serviceAccount == null) {
                 throw new IllegalStateException("Firebase service account file not found");
@@ -29,9 +37,10 @@ public class FirebaseConfig {
             if (FirebaseApp.getApps().isEmpty()) {
                 FirebaseApp.initializeApp(options);
             }
+            }
 
         } catch (Exception e) {
-            throw new RuntimeException("Firebase 초기화 실패", e);
+            throw new IllegalStateException("Firebase initialization failed: check FIREBASE_CREDENTIALS_PATH and readable valid credentials", e);
         }
     }
 }

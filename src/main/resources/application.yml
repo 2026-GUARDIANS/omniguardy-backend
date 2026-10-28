@@ -1,8 +1,10 @@
 spring:
-  config:
-    import: optional:file:.env[.properties]
   profiles:
     active: dev # OR prod
   flyway:
     baseline-on-migrate: true
     baseline-version: 0
+
+omniguardy:
+  device:
+    api-key: ${AUDIO_DEVICE_API_KEY:}

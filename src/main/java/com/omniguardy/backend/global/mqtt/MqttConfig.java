@@ -23,12 +23,19 @@ public class MqttConfig {
     @Value("${mqtt.client-id}")
     private String clientId;
 
+    @Value("${mqtt.username:}") private String username;
+    @Value("${mqtt.password:}") private String password;
+
     @Bean
     public MqttPahoClientFactory mqttClientFactory() {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
 
         MqttConnectOptions options = new MqttConnectOptions();
         options.setServerURIs(new String[]{brokerUrl});
+        if (!username.isBlank()) {
+            options.setUserName(username);
+            options.setPassword(password.toCharArray());
+        }
         options.setCleanSession(true);
         options.setAutomaticReconnect(true);
 
