@@ -66,9 +66,9 @@ aws:
     video-prefix: ${S3_VIDEO_PREFIX:videos}
 springdoc:
   api-docs:
-    enabled: false
+    enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
-    enabled: false
+    enabled: ${SWAGGER_ENABLED:true}
 ai:
   agent:
     enabled: ${AGENT_AI_ENABLED:true}
