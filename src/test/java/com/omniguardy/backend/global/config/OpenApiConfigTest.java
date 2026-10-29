@@ -26,6 +26,8 @@ class OpenApiConfigTest {
                 .isEqualTo("bearer");
         assertThat(openApi.getComponents().getSecuritySchemes().get(OpenApiConfig.BEARER_AUTH).getBearerFormat())
                 .isEqualTo("JWT");
+        assertThat(openApi.getComponents().getSecuritySchemes().get(OpenApiConfig.DEVICE_API_KEY).getName())
+                .isEqualTo("X-Device-Api-Key");
     }
 
     @Test

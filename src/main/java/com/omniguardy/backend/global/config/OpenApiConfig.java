@@ -18,7 +18,8 @@ import java.util.List;
 @Configuration
 public class OpenApiConfig {
 
-    static final String BEARER_AUTH = "bearerAuth";
+    public static final String BEARER_AUTH = "bearerAuth";
+    public static final String DEVICE_API_KEY = "deviceApiKey";
 
     private static final List<PathPattern> PUBLIC_API_PATHS = Arrays.stream(new String[]{
                     "/api/auth/signup",
@@ -48,7 +49,12 @@ public class OpenApiConfig {
                                 .name(BEARER_AUTH)
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
-                                .bearerFormat("JWT")));
+                                .bearerFormat("JWT"))
+                        .addSecuritySchemes(DEVICE_API_KEY,
+                                new SecurityScheme()
+                                        .name("X-Device-Api-Key")
+                                        .type(SecurityScheme.Type.APIKEY)
+                                        .in(SecurityScheme.In.HEADER)));
     }
 
     @Bean
@@ -62,6 +68,22 @@ public class OpenApiConfig {
             pathItem.readOperations().forEach(operation -> operation.setSecurity(
                     List.of(new SecurityRequirement().addList(BEARER_AUTH))));
         });
+    }
+
+    @Bean
+    public OpenApiCustomizer jsonResponseMediaTypeOpenApiCustomizer() {
+        return openApi -> openApi.getPaths().values().stream()
+                .flatMap(pathItem -> pathItem.readOperations().stream())
+                .flatMap(operation -> operation.getResponses().values().stream())
+                .filter(response -> response.getContent() != null && response.getContent().containsKey("*/*"))
+                .forEach(response -> {
+                    var jsonContent = response.getContent().remove("*/*");
+                    var inferredContent = response.getContent().get("application/json");
+                    if (jsonContent.getSchema() == null && inferredContent != null) {
+                        jsonContent.setSchema(inferredContent.getSchema());
+                    }
+                    response.getContent().put("application/json", jsonContent);
+                });
     }
 
     private boolean isPublicApi(PathContainer path) {

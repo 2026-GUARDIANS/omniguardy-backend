@@ -63,6 +63,40 @@ class SwaggerEndpointIntegrationTest {
     }
 
     @Test
+    void documentsConcreteRequestsResponsesAndContractErrors() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.summary").value("회원가입"))
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.requestBody.content['application/json'].examples['회원가입 요청'].value.email")
+                        .value("guard@example.com"))
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['201'].content['application/json'].examples.SIGNUP_SUCCESS.value.data.name")
+                        .value("김가디"))
+                .andExpect(jsonPath("$.paths['/api/auth/signup'].post.responses['409'].content['application/json'].examples.EMAIL_ALREADY_EXISTS.value.code")
+                        .value("EMAIL_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.components.schemas.SignupRequestDto.properties.email.example")
+                        .value("guard@example.com"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.security[0].deviceApiKey")
+                        .isArray())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.requestBody.content['application/json'].examples['노크 감지'].value.predicted_class")
+                        .value("knock"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.responses['200'].content['application/json'].examples.AUDIO_RESULT_RECEIVED.value.data.outcome")
+                        .value("TRIGGERED"))
+                .andExpect(jsonPath("$.paths['/api/edge/video'].post.responses['413'].content['application/json'].examples.VIDEO_FILE_TOO_LARGE.value.status")
+                        .value(413))
+                .andExpect(jsonPath("$.paths['/api/security-events'].get.responses['200'].content['application/json'].examples['첫 페이지'].value.content[0].eventId")
+                        .value("evt-video-20261029-001"))
+                .andExpect(jsonPath("$.paths['/api/security-events/{eventId}'].get.responses['404'].content['application/json'].examples.SECURITY_EVENT_NOT_FOUND.value.code")
+                        .value("SECURITY_EVENT_NOT_FOUND"))
+                .andExpect(jsonPath("$.paths['/api/tts'].post.requestBody.content['application/json'].examples['TTS 요청'].value.message")
+                        .value("문 앞에서 물러나 주세요. 보호자에게 알림이 전송되었습니다."))
+                .andExpect(jsonPath("$.paths['/api/tts'].post.responses['503'].content['application/json'].examples.TTS_DISABLED.value.code")
+                        .value("TTS_DISABLED"))
+                .andExpect(jsonPath("$.paths['/api/device-tokens'].post.responses['201'].content['application/json'].examples.DEVICE_TOKEN_REGISTERED.value.code")
+                        .value("DEVICE_TOKEN_REGISTERED"))
+                .andExpect(jsonPath("$.paths['/api/sounds/{type}'].post.responses['204']").exists());
+    }
+
+    @Test
     void preservesPublicAndJwtProtectedApiBehavior() throws Exception {
         mvc.perform(get("/hello"))
                 .andExpect(status().isOk());
