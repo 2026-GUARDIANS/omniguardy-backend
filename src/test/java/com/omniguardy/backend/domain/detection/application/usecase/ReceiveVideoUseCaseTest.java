@@ -18,6 +18,60 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class ReceiveVideoUseCaseTest {
+    @Test void s3FailureKeepsVisionCheckpointAndReleasesClaim() {
+        var journal = mock(VideoUploadJournal.class);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        stubStorageAndVision(List.of());
+        when(storage.saveVideo(anyString(), any())).thenThrow(new IllegalStateException("S3 unavailable"));
+        assertThrows(IllegalStateException.class, () -> useCase.receive(file, keypad()));
+        verify(journal).analyzed(eq(upload), any());
+        verify(journal, never()).stored(any(), any());
+        verify(journal, never()).complete(any(), any());
+        verify(journal).release(upload);
+        verifyNoInteractions(repository, agent);
+    }
+
+    @Test void checkpointRetryDoesNotRepeatVisionOrS3() {
+        var journal = mock(VideoUploadJournal.class);
+        var vision = new VisionAnalysis("trg-keypad", TriggerType.KEYPAD, null, time, time,
+                null, null, List.of(), null);
+        var upload = new VideoUploadJournal.Upload("upload", vision,
+                new MediaStoragePort.StoredMedia("v.mp4", "videos/key"), null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        var result = useCase.receive(file, keypad());
+        assertNull(result.eventId());
+        verifyNoInteractions(visionPort, storage, repository, agent);
+        verify(journal).complete(upload, result);
+        verify(journal).release(upload);
+    }
+
+    @Test void completedRetryReturnsOriginalResponseWithoutExternalEffects() {
+        var journal = mock(VideoUploadJournal.class);
+        var result = new VideoReceipt("original", "v.mp4", null);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, result);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        assertSame(result, useCase.receive(file, keypad()));
+        verifyNoInteractions(visionPort, storage, repository, agent);
+        verify(journal).release(upload);
+    }
+
+    @Test void databaseFailureAfterS3KeepsStoredCheckpointForRetry() {
+        var journal = mock(VideoUploadJournal.class);
+        var upload = new VideoUploadJournal.Upload("upload", null, null, null);
+        useCase.setVideoUploadJournal(journal);
+        when(journal.begin(file, keypad())).thenReturn(upload);
+        stubStorageAndVision(List.of(new VisionEvent("OTHER_EVENT", 0.9, 1, Map.of())));
+        when(repository.save(any())).thenThrow(new IllegalStateException("DB unavailable"));
+        assertThrows(IllegalStateException.class, () -> useCase.receive(file, keypad()));
+        verify(journal).stored(eq(upload), any());
+        verify(journal, never()).complete(any(), any());
+        verify(journal).release(upload);
+        verifyNoInteractions(agent);
+    }
     private final VisionAnalysisPort visionPort = mock(VisionAnalysisPort.class);
     private final MediaStoragePort storage = mock(MediaStoragePort.class);
     private final SecurityEventRepository repository = mock(SecurityEventRepository.class);
@@ -121,8 +175,8 @@ class ReceiveVideoUseCaseTest {
         assertThrows(IllegalStateException.class, () -> useCase.receive(file,
                 new VideoTriggerContext("audio", null, TriggerType.AUDIO, null, null)));
         assertEquals("FAILED", event.getStatus());
-        assertEquals("video-path", event.getVideoPath());
-        verifyNoInteractions(agent);
+        assertNull(event.getVideoPath());
+        verifyNoInteractions(storage, agent);
     }
 
     private VideoTriggerContext keypad() {

@@ -24,6 +24,10 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @RequestMapping("/api/auth")
 public class AuthController {
+    @org.springframework.beans.factory.annotation.Value("${app.security.cookie-secure:false}")
+    private boolean cookieSecure;
+    @org.springframework.beans.factory.annotation.Value("${app.security.cookie-same-site:Lax}")
+    private String cookieSameSite;
     private final AuthUseCase authUseCase;
     private final AuthPresentationMapper mapper;
 
@@ -56,11 +60,11 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> logout(@AuthenticationPrincipal CustomUserDetails userDetails,
                                                      HttpServletResponse response) {
         authUseCase.logout(userDetails.getUserId());
-        CookieUtil.deleteRefreshTokenCookie(response);
+        CookieUtil.deleteRefreshTokenCookie(response, cookieSecure, cookieSameSite);
         return SuccessResponse.of(AuthSuccessCode.LOGOUT_SUCCESS, null);
     }
 
     private void addRefreshCookie(HttpServletResponse response, AuthSession session) {
-        CookieUtil.addRefreshTokenCookie(response, session.refreshToken(), session.refreshTokenMaxAgeSeconds());
+        CookieUtil.addRefreshTokenCookie(response, session.refreshToken(), session.refreshTokenMaxAgeSeconds(), cookieSecure, cookieSameSite);
     }
 }

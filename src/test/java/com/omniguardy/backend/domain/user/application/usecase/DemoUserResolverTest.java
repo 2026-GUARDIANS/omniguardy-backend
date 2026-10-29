@@ -21,13 +21,15 @@ class DemoUserResolverTest {
         var loader = new YamlPropertySourceLoader();
         var defaults = loader.load("defaults", new ClassPathResource("application.yml")).getFirst();
         assertEquals("dev", defaults.getProperty("spring.profiles.active"));
+        var prod = loader.load("prod", new ClassPathResource("application-prod.yml")).getFirst();
+        assertEquals("${OMNIGUARDY_DEMO_USERID}", prod.getProperty("omniguardy.demo.user-id"));
         environment.setActiveProfiles("dev");
         loader.load("dev", new ClassPathResource("application-dev.yml"))
                 .forEach(source -> environment.getPropertySources().addFirst(source));
         User user = mock(User.class);
         when(repository.findById(1L)).thenReturn(Optional.of(user));
         assertSame(user, resolver.resolve().orElseThrow());
-        for (String profile : new String[]{"prod", "test"}) {
+        for (String profile : new String[]{"test"}) {
             var sources = loader.load(profile, new ClassPathResource("application-" + profile + ".yml"));
             assertTrue(sources.stream().allMatch(source -> source.getProperty("omniguardy.demo.user-id") == null));
         }

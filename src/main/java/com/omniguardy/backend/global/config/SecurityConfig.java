@@ -24,6 +24,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    @org.springframework.beans.factory.annotation.Value("${app.security.cors-allowed-origins:http://localhost:8081,http://10.254.2.143:8081}")
+    private String allowedOrigins;
     private final JwtProvider jwtProvider;
     private final CustomUserDetailsService customUserDetailsService;
     private final ErrorResponseWriter errorResponseWriter;
@@ -95,7 +97,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("http://localhost:8081", "http://10.254.2.143:8081")); // 프론트 대역 허용
+        configuration.setAllowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim).filter(value -> !value.isEmpty()).toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

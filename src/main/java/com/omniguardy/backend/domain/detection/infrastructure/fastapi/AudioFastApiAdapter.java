@@ -8,7 +8,6 @@ import com.omniguardy.backend.domain.detection.infrastructure.fastapi.dto.AudioP
 import com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
@@ -19,16 +18,30 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @Slf4j
 public class AudioFastApiAdapter implements AudioAnalysisPort {
-    private final RestClient restClient;
+    private RestClient restClient;
+    private boolean injectedClient;
+    @Value("${ai.fastapi.audio.connect-timeout-seconds:5}") private long connectTimeout;
+    @Value("${ai.fastapi.audio.read-timeout-seconds:60}") private long readTimeout;
     @Value("${ai.fastapi.audio.base-url}") private String baseUrl;
     @Value("${ai.fastapi.audio.endpoint}") private String endpoint;
 
     public AudioFastApiAdapter() {
-        this(RestClient.create());
+        this.restClient = RestClient.create();
     }
 
     AudioFastApiAdapter(RestClient restClient) {
         this.restClient = restClient;
+        this.injectedClient = true;
+    }
+
+    @jakarta.annotation.PostConstruct
+    void initializeClient() {
+        if (injectedClient) return;
+        var http = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(connectTimeout)).build();
+        var factory = new org.springframework.http.client.JdkClientHttpRequestFactory(http);
+        factory.setReadTimeout(java.time.Duration.ofSeconds(readTimeout));
+        restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     @Override
@@ -39,6 +52,7 @@ public class AudioFastApiAdapter implements AudioAnalysisPort {
             MultipartBodyBuilder body = new MultipartBodyBuilder();
             body.part("file", resource(file)).contentType(MediaType.parseMediaType("audio/wav"));
             AudioPredictResponseDto response = restClient.post().uri(baseUrl + endpoint)
+                    .header("ngrok-skip-browser-warning", "true")
                     .contentType(MediaType.MULTIPART_FORM_DATA).body(body.build()).retrieve()
                     .body(AudioPredictResponseDto.class);
             if (response == null) throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED);
@@ -59,11 +73,7 @@ public class AudioFastApiAdapter implements AudioAnalysisPort {
         return Math.round(elapsed * 1_000.0) / 1_000.0;
     }
 
-    private ByteArrayResource resource(MediaFile file) {
-        return new ByteArrayResource(file.bytes()) {
-            @Override public String getFilename() { return file.originalFilename(); }
-        };
+    private org.springframework.core.io.Resource resource(MediaFile file) {
+        return new com.omniguardy.backend.domain.detection.infrastructure.fastapi.MediaResource(file);
     }
 }
-
-

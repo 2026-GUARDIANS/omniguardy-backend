@@ -112,11 +112,18 @@ public class EdgeVideoController {
                         triggeredAt
                 );
 
-        VideoReceipt result =
-                receiveVideoInputPort.receive(
-                        mapper.toMediaFile(file),
-                        triggerContext
-                );
+        if (file.isEmpty()) throw new BusinessException(DetectionErrorCode.EMPTY_VIDEO_FILE);
+        if (file.getSize() > 100L * 1024 * 1024) throw new BusinessException(DetectionErrorCode.VIDEO_FILE_TOO_LARGE);
+        java.nio.file.Path temporary = java.nio.file.Files.createTempFile("omniguardy-video-", ".upload");
+        VideoReceipt result;
+        try {
+            file.transferTo(temporary);
+            result = receiveVideoInputPort.receive(
+                    com.omniguardy.backend.domain.detection.application.model.MediaFile.fromPath(
+                            file.getOriginalFilename(), file.getContentType(), temporary), triggerContext);
+        } finally {
+            java.nio.file.Files.deleteIfExists(temporary);
+        }
 
         return SuccessResponse.of(
                 DetectionSuccessCode.VIDEO_ANALYZED,

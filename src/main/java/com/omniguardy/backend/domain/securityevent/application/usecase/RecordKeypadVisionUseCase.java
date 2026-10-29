@@ -30,9 +30,15 @@ public class RecordKeypadVisionUseCase implements RecordKeypadVisionInputPort {
         if (command.triggerId() == null || command.triggerId().isBlank() || command.triggeredAt() == null) {
             throw new IllegalArgumentException("KEYPAD triggerId and triggeredAt are required");
         }
+        var owner = demoUserResolver.resolve().orElse(null);
+        // Stable identity prevents a retry after DB commit from creating another event.
+        String eventId = UUID.nameUUIDFromBytes(("KEYPAD:" + command.triggerId())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        var existing = repository.findByEventId(eventId);
+        if (existing.isPresent()) return existing.get().getEventId();
         SecurityEvent event = SecurityEvent.builder()
-                .user(demoUserResolver.resolve().orElse(null))
-                .eventId(UUID.randomUUID().toString())
+                .user(owner)
+                .eventId(eventId)
                 .triggerId(command.triggerId()).triggerType(EventTriggerType.KEYPAD)
                 .triggeredAt(command.triggeredAt()).videoPath(command.videoPath()).build();
         event.updateVisionResult(command.prediction(), command.confidence(), command.analysisMode(), command.classProbabilities(),

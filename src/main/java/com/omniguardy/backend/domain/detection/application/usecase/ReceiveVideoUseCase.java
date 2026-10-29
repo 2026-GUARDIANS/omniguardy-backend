@@ -6,6 +6,7 @@ import com.omniguardy.backend.domain.detection.application.model.VideoTriggerCon
 import com.omniguardy.backend.domain.detection.application.model.VisionAnalysis;
 import com.omniguardy.backend.domain.detection.application.port.in.ReceiveVideoInputPort;
 import com.omniguardy.backend.domain.detection.application.port.out.MediaStoragePort;
+import com.omniguardy.backend.domain.detection.application.port.out.VideoUploadJournal;
 import com.omniguardy.backend.domain.detection.application.port.out.VisionAnalysisPort;
 import com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode;
 import com.omniguardy.backend.domain.securityevent.application.usecase.AnalyzeAgentRiskUseCase;
@@ -37,6 +38,13 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
     private final ObjectMapper objectMapper;
     private final RecordKeypadVisionInputPort recordKeypadVisionInputPort;
 
+    private VideoUploadJournal journal;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setVideoUploadJournal(VideoUploadJournal journal) {
+        this.journal = journal;
+    }
+
     @Override
     public VideoReceipt receive(
             MediaFile file,
@@ -53,20 +61,19 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
             );
         }
 
-        return switch (triggerContext.triggerType()) {
-
-            case AUDIO ->
-                    receiveAudioTriggeredVideo(
-                            file,
-                            triggerContext
-                    );
-
-            case KEYPAD ->
-                    receiveKeypadTriggeredVideo(
-                            file,
-                            triggerContext
-                    );
-        };
+        if (triggerContext.triggerType() == TriggerType.KEYPAD) validateRequiredTriggerFields(triggerContext);
+        var upload = journal == null ? null : journal.begin(file, triggerContext);
+        try {
+            if (upload != null && upload.completed() != null) return upload.completed();
+            VideoReceipt result = switch (triggerContext.triggerType()) {
+                case AUDIO -> receiveAudioTriggeredVideo(file, triggerContext, upload);
+                case KEYPAD -> receiveKeypadTriggeredVideo(file, triggerContext, upload);
+            };
+            if (upload != null) journal.complete(upload, result);
+            return result;
+        } finally {
+            if (upload != null) journal.release(upload);
+        }
     }
 
     // ============================================
@@ -75,7 +82,8 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
     private VideoReceipt receiveAudioTriggeredVideo(
             MediaFile file,
-            VideoTriggerContext triggerContext
+            VideoTriggerContext triggerContext,
+            VideoUploadJournal.Upload upload
     ) {
 
         String eventId =
@@ -108,29 +116,14 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
         try {
 
-            MediaStoragePort.StoredMedia stored =
-                    mediaStoragePort.saveVideo(
-                            eventId,
-                            file
-                    );
-
-            event.updateVideoPath(
-                    stored.path()
-            );
-
-            securityEventRepository.save(event);
-
-            /*
-             * 수정:
-             * file만 보내지 않고 Trigger 정보도 전달.
-             */
-            VisionAnalysis vision =
-                    visionAnalysisPort.analyze(
-                            file,
-                            audioContext
-                    );
-
+            VisionAnalysis vision = analyzeVideo(file, audioContext, upload);
             validateVisionResult(vision, TriggerType.AUDIO);
+            MediaStoragePort.StoredMedia stored = storeVideo(eventId, file, upload);
+            if (upload != null && "COMPLETED".equals(event.getStatus())) {
+                return new VideoReceipt(eventId, stored.filename(), vision);
+            }
+            event.updateVideoPath(stored.path());
+            securityEventRepository.save(event);
 
             boolean requiresRiskAssessment = vision.requiresAudioRiskAssessment();
 
@@ -178,7 +171,8 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
     private VideoReceipt receiveKeypadTriggeredVideo(
             MediaFile file,
-            VideoTriggerContext triggerContext
+            VideoTriggerContext triggerContext,
+            VideoUploadJournal.Upload upload
     ) {
 
         validateRequiredTriggerFields(triggerContext);
@@ -188,23 +182,9 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
         /*
          * KEYPAD 자체는 SecurityEvent가 아니다.
          */
-        MediaStoragePort.StoredMedia stored =
-                mediaStoragePort.saveVideo(
-                        triggerId,
-                        file
-                );
-
-        /*
-         * 수정:
-         * Trigger 정보도 Vision으로 전달.
-         */
-        VisionAnalysis vision =
-                visionAnalysisPort.analyze(
-                        file,
-                        triggerContext
-                );
-
+        VisionAnalysis vision = analyzeVideo(file, triggerContext, upload);
         validateVisionResult(vision, TriggerType.KEYPAD);
+        MediaStoragePort.StoredMedia stored = storeVideo(triggerId, file, upload);
 
         if (!vision.hasVisionEvents()) {
             return new VideoReceipt(null, stored.filename(), vision);
@@ -218,7 +198,15 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
                 vision.videoDurationSeconds(), vision.analyzedAt()));
 
         if (vision.hasHighRiskKeypadEvent()) {
-            analyzeAgentRiskUseCase.analyze(eventId);
+            boolean completed = upload != null && securityEventRepository.findByEventId(eventId)
+                    .map(event -> "COMPLETED".equals(event.getStatus())).orElse(false);
+            if (!completed) {
+                if (upload != null) securityEventRepository.findByEventId(eventId).ifPresent(event -> {
+                    event.updateStatus("VISION_ANALYZED");
+                    securityEventRepository.save(event);
+                });
+                analyzeAgentRiskUseCase.analyze(eventId);
+            }
         }
         return new VideoReceipt(eventId, stored.filename(), vision);
     }
@@ -227,12 +215,29 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
     // Validation
     // ============================================
 
+    private VisionAnalysis analyzeVideo(MediaFile file, VideoTriggerContext context,
+            VideoUploadJournal.Upload upload) {
+        if (upload != null && upload.vision() != null) return upload.vision();
+        VisionAnalysis vision = visionAnalysisPort.analyze(file, context);
+        validateVisionResult(vision, context.triggerType());
+        if (upload != null) journal.analyzed(upload, vision);
+        return vision;
+    }
+
+    private MediaStoragePort.StoredMedia storeVideo(String id, MediaFile file,
+            VideoUploadJournal.Upload upload) {
+        if (upload != null && upload.stored() != null) return upload.stored();
+        var stored = mediaStoragePort.saveVideo(id, file);
+        if (upload != null) journal.stored(upload, stored);
+        return stored;
+    }
+
     private void validateFile(
             MediaFile file
     ) {
 
         if (file == null
-                || file.bytes().length == 0) {
+                || file.size() == 0) {
 
             throw new BusinessException(
                     DetectionErrorCode.EMPTY_VIDEO_FILE

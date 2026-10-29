@@ -1,0 +1,69 @@
+name: 📝 Issue
+description: 새로운 이슈를 등록합니다.
+title: "[Issue] "
+labels: []
+
+body:
+  - type: checkboxes
+    id: type
+    attributes:
+      label: 🏷️ Type
+      description: 해당하는 이슈 타입을 선택해주세요.
+      options:
+        - label: "✨ Feature"
+        - label: "🐛 Bug"
+        - label: "🔧 Fix"
+        - label: "♻️ Refactor"
+        - label: "📚 Docs"
+        - label: "🧹 Chore"
+        - label: "🧪 Test"
+        - label: "💬 Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 📝 Description
+      description: 이슈의 목적과 작업 내용을 작성해주세요.
+      placeholder: |
+        이슈에서 해결하거나 구현하려는 내용을 작성해주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: 🛠️ 구현 계획
+      description: 구현할 작업과 기술적인 내용을 작성해주세요.
+      placeholder: |
+        - 구현할 기능
+        - 필요한 API 또는 로직
+        - 사용 기술
+        - 데이터 처리 방식
+    validations:
+      required: false
+
+  - type: textarea
+    id: todo
+    attributes:
+      label: ✅ Todo
+      description: 작업해야 할 세부 항목을 체크리스트로 작성해주세요.
+      placeholder: |
+        - [ ] 작업 1
+        - [ ] 작업 2
+        - [ ] 작업 3
+    validations:
+      required: false
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: 🔗 참고사항
+      description: 관련 문서, 참고 내용, 주의사항 등을 작성해주세요.
+      placeholder: |
+        - 관련 이슈 또는 PR
+        - 참고 문서
+        - 구현 시 주의사항
+    validations:
+      required: false

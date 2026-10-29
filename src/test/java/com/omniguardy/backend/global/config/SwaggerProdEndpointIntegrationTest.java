@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = SwaggerTestApplication.class, properties = {
+        "omniguardy.device.api-key=swagger-test-device-key",
         "jwt.secret-key=swagger-test-secret-at-least-32-bytes",
         "jwt.access-token-expire-time=1800000",
         "jwt.refresh-token-expire-time=1209600000"
