@@ -64,6 +64,10 @@ public class SecurityConfig {
                                 errorResponseWriter.write(response, GlobalErrorCode.ACCESS_DENIED)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
                                 "/api/auth/signup",
                                 "/api/auth/login",
                                 "/api/auth/refresh",
