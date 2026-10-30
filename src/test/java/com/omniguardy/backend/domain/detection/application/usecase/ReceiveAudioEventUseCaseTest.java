@@ -34,10 +34,11 @@ class ReceiveAudioEventUseCaseTest {
     @ParameterizedTest
     @EnumSource(value = AudioEventType.class, names = {"KNOCK", "HANDLE"})
     void detectedAudioCreatesEventWithoutFile(AudioEventType type) {
-        when(users.resolve()).thenReturn(Optional.of(mock(User.class)));
+        User owner = mock(User.class);
+        when(users.resolve()).thenReturn(Optional.of(owner));
         var result = useCase.receive("pi-1", new AudioAnalysis(type, 0.01));
         assertEquals(AudioDetectionResult.Outcome.TRIGGERED, result.outcome());
-        verify(events).save(argThat(event -> event.getAudioPath() == null
+        verify(events).save(argThat(event -> event.getUser() == owner && event.getAudioPath() == null
                 && event.getAudioEventType() == type && event.getAudioProbability() == 0.01
                 && event.getEventId().equals(event.getTriggerId())
                 && event.getEventId().equals(result.eventId())

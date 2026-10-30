@@ -11,15 +11,17 @@ import org.springframework.stereotype.Service;
 @Service
 public class FirebasePushAdapter implements PushNotificationPort {
 
+    @Override
     public void send(
             String token,
             String title,
             String body,
             String type,
-            String riskLevel
+            String riskLevel,
+            String eventId
     ) {
         try {
-            Message message = Message.builder()
+            Message.Builder builder = Message.builder()
                     .setToken(token)
                     .setNotification(
                             Notification.builder()
@@ -28,8 +30,10 @@ public class FirebasePushAdapter implements PushNotificationPort {
                                     .build()
                     )
                     .putData("type", type)
-                    .putData("riskLevel", riskLevel)
-                    .build();
+                    .putData("riskLevel", riskLevel);
+            // The existing test notification has no associated security event.
+            if (eventId != null) builder.putData("eventId", eventId);
+            Message message = builder.build();
 
             FirebaseMessaging.getInstance().send(message);
 

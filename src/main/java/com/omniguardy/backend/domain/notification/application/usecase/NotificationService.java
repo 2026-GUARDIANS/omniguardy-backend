@@ -22,6 +22,11 @@ public class NotificationService {
 
     @Transactional
     public void sendSecurityAlert(User user, int riskLevel, String eventType) {
+        sendSecurityAlert(user, riskLevel, eventType, null);
+    }
+
+    @Transactional
+    public void sendSecurityAlert(User user, int riskLevel, String eventType, String eventId) {
         String title = makeTitle(riskLevel);
         String message = makeMessage(riskLevel);
         notificationRepository.save(Notification.builder().user(user).type(NotificationType.SECURITY_EVENT)
@@ -30,7 +35,7 @@ public class NotificationService {
         List<DeviceToken> deviceTokens = deviceTokenRepository.findAllByUserAndActiveTrue(user);
         for (DeviceToken deviceToken : deviceTokens) {
             pushNotificationPort.send(deviceToken.getToken(), title, message,
-                    "SECURITY_EVENT", String.valueOf(riskLevel));
+                    "SECURITY_EVENT", String.valueOf(riskLevel), eventId);
         }
     }
 
