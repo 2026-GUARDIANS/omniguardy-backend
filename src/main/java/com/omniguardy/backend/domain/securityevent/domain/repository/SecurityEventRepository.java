@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 public interface SecurityEventRepository {
     Optional<SecurityEvent> findByEventId(String eventId);
     Page<SecurityEvent> findAllByUserId(Long userId, Pageable pageable);
+    Page<SecurityEvent> findAllByUserIdAndRiskLevel(Long userId, String riskLevel, Pageable pageable);
     Optional<SecurityEvent> findByEventIdAndUserId(String eventId, Long userId);
     SecurityEvent save(SecurityEvent event);
 }

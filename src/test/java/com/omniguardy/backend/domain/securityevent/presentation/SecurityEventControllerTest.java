@@ -71,9 +71,44 @@ class SecurityEventControllerTest {
                 mvc.perform(get(path).header("Authorization", "Bearer invalid")).andExpect(status().isUnauthorized());
             }
             verifyNoInteractions(repository);
-            mvc.perform(get("/api/security-events?userId=2").header("Authorization", "Bearer token-1"))
+            var unfiltered = mvc.perform(get("/api/security-events?userId=2").header("Authorization", "Bearer token-1"))
                     .andExpect(status().isOk()).andExpect(jsonPath("size").value(20))
-                    .andExpect(jsonPath("content[0].eventId").value("owned")).andExpect(jsonPath("totalElements").value(1));
+                    .andExpect(jsonPath("content[0].eventId").value("owned")).andExpect(jsonPath("totalElements").value(1))
+                    .andReturn().getResponse().getContentAsString();
+            for (String riskLevel : List.of("HIGH", "MEDIUM", "LOW")) {
+                var filteredEvent = SecurityEvent.builder().eventId("owned").status("COMPLETED")
+                        .riskLevel(riskLevel).riskScore(90).visionAnalysisMode("exhibition_rules").build();
+                when(repository.findAllByUserIdAndRiskLevel(eq(1L), eq(riskLevel), any())).thenAnswer(invocation ->
+                        new PageImpl<>(List.of(filteredEvent), invocation.getArgument(2), 1));
+                when(repository.findAllByUserIdAndRiskLevel(eq(2L), eq(riskLevel), any())).thenAnswer(invocation ->
+                        new PageImpl<>(List.of(), invocation.getArgument(2), 0));
+                var filtered = mvc.perform(get("/api/security-events").param("riskLevel", riskLevel).param("userId", "2")
+                                .header("Authorization", "Bearer token-1"))
+                        .andExpect(status().isOk()).andExpect(jsonPath("content[0].riskLevel").value(riskLevel))
+                        .andExpect(jsonPath("page").value(0)).andExpect(jsonPath("size").value(20))
+                        .andExpect(jsonPath("totalElements").value(1)).andExpect(jsonPath("totalPages").value(1))
+                        .andExpect(jsonPath("first").value(true)).andExpect(jsonPath("last").value(true))
+                        .andReturn().getResponse().getContentAsString();
+                // The complete JSON is identical to the original response except for the risk value.
+                org.junit.jupiter.api.Assertions.assertEquals(unfiltered.replace("\"HIGH\"", "\"" + riskLevel + "\""), filtered);
+                mvc.perform(get("/api/security-events").param("riskLevel", riskLevel).param("page", "1").param("size", "2")
+                                .header("Authorization", "Bearer token-2"))
+                        .andExpect(status().isOk()).andExpect(jsonPath("page").value(1)).andExpect(jsonPath("size").value(2))
+                        .andExpect(jsonPath("content").isEmpty()).andExpect(jsonPath("totalElements").value(0));
+                verify(repository).findAllByUserIdAndRiskLevel(eq(1L), eq(riskLevel), argThat(p ->
+                        p.getPageNumber() == 0 && p.getPageSize() == 20
+                                && p.getSort().equals(org.springframework.data.domain.Sort.by(
+                                        org.springframework.data.domain.Sort.Order.desc("createdAt"),
+                                        org.springframework.data.domain.Sort.Order.desc("id")))));
+                verify(repository).findAllByUserIdAndRiskLevel(eq(2L), eq(riskLevel),
+                        argThat(p -> p.getPageNumber() == 1 && p.getPageSize() == 2));
+            }
+            for (String invalid : List.of("INVALID", "CRITICAL", "high", "", " ", " HIGH", "HIGH ")) {
+                mvc.perform(get("/api/security-events").param("riskLevel", invalid)
+                                .header("Authorization", "Bearer token-1"))
+                        .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_REQUEST"));
+                verify(repository, never()).findAllByUserIdAndRiskLevel(anyLong(), eq(invalid), any());
+            }
             mvc.perform(get("/api/security-events?page=1&size=2").header("Authorization", "Bearer token-2"))
                     .andExpect(status().isOk()).andExpect(jsonPath("page").value(1))
                     .andExpect(jsonPath("content").isEmpty()).andExpect(jsonPath("totalElements").value(0));

@@ -4,6 +4,9 @@ import com.omniguardy.backend.domain.securityevent.application.model.SecurityEve
 import com.omniguardy.backend.domain.securityevent.application.model.SecurityEventPageResponse;
 
 public interface QuerySecurityEventsInputPort {
-    SecurityEventPageResponse list(Long userId, int page, int size);
+    default SecurityEventPageResponse list(Long userId, int page, int size) {
+        return list(userId, page, size, null);
+    }
+    SecurityEventPageResponse list(Long userId, int page, int size, String riskLevel);
     SecurityEventResponse detail(Long userId, String eventId);
 }
