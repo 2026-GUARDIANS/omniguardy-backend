@@ -19,14 +19,20 @@ public class QuerySecurityEventsUseCase implements QuerySecurityEventsInputPort 
     private final SecurityEventRepository repository;
 
     @Override
-    public SecurityEventPageResponse list(Long userId, int page, int size) {
+    public SecurityEventPageResponse list(Long userId, int page, int size, String riskLevel) {
         requireUser(userId);
         if (page < 0 || size < 1 || size > 100) {
             throw new BusinessException(GlobalErrorCode.INVALID_REQUEST);
         }
+        if (riskLevel != null && !java.util.Set.of("HIGH", "MEDIUM", "LOW").contains(riskLevel)) {
+            throw new BusinessException(GlobalErrorCode.INVALID_REQUEST);
+        }
         var pageable = PageRequest.of(page, size, Sort.by(
                 Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-        return SecurityEventPageResponse.from(repository.findAllByUserId(userId, pageable).map(SecurityEventResponse::from));
+        var events = riskLevel == null
+                ? repository.findAllByUserId(userId, pageable)
+                : repository.findAllByUserIdAndRiskLevel(userId, riskLevel, pageable);
+        return SecurityEventPageResponse.from(events.map(SecurityEventResponse::from));
     }
 
     @Override

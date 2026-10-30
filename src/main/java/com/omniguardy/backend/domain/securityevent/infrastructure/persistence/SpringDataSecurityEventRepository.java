@@ -15,5 +15,8 @@ interface SpringDataSecurityEventRepository extends JpaRepository<SecurityEvent,
     Page<SecurityEvent> findAllByUser_Id(Long userId, Pageable pageable);
 
     @EntityGraph(attributePaths = "user")
+    Page<SecurityEvent> findAllByUser_IdAndRiskLevel(Long userId, String riskLevel, Pageable pageable);
+
+    @EntityGraph(attributePaths = "user")
     Optional<SecurityEvent> findByEventIdAndUser_Id(String eventId, Long userId);
 }
