@@ -30,7 +30,7 @@ class RiskResponseServiceTest {
 
         service.respond(event(user), RiskLevel.MEDIUM);
 
-        verify(notificationService).sendSecurityAlert(user, 2, "AUDIO");
+        verify(notificationService).sendSecurityAlert(user, 2, "AUDIO", "event-1");
         verifyNoInteractions(playSoundUseCase);
     }
 
@@ -47,7 +47,7 @@ class RiskResponseServiceTest {
 
         service.respond(event(user), RiskLevel.HIGH);
 
-        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO");
+        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
         verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
@@ -63,7 +63,7 @@ class RiskResponseServiceTest {
     void pushFailureDoesNotPreventHighRiskWarning() {
         User user = mock(User.class);
         doThrow(new IllegalStateException("FCM unavailable"))
-                .when(notificationService).sendSecurityAlert(user, 3, "AUDIO");
+                .when(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
 
         service.respond(event(user), RiskLevel.HIGH);
 
@@ -86,8 +86,20 @@ class RiskResponseServiceTest {
 
         service.respond(event(user), RiskLevel.CRITICAL);
 
-        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO");
+        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
         verify(playSoundUseCase).play(PlaySoundType.SIREN);
+    }
+
+    @Test
+    void keypadPushUsesPublicEventIdInsteadOfDatabaseId() {
+        User user = mock(User.class);
+        SecurityEvent event = SecurityEvent.builder().id(42L).eventId("evt-keypad-public")
+                .triggerType(EventTriggerType.KEYPAD).user(user).riskLevel("HIGH").status("COMPLETED").build();
+
+        service.respond(event, RiskLevel.HIGH);
+
+        verify(notificationService).sendSecurityAlert(user, 3, "KEYPAD", "evt-keypad-public");
+        verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     private SecurityEvent event(User user) {

@@ -44,7 +44,7 @@ public class RiskResponseService {
             String eventType = event.getTriggerType() == null
                     ? "SECURITY_EVENT"
                     : event.getTriggerType().name();
-            notificationService.sendSecurityAlert(event.getUser(), notificationLevel, eventType);
+            notificationService.sendSecurityAlert(event.getUser(), notificationLevel, eventType, event.getEventId());
         } catch (RuntimeException exception) {
             log.error("Risk push failed: eventId={}, riskLevel={}",
                     event.getEventId(), event.getRiskLevel(), exception);
