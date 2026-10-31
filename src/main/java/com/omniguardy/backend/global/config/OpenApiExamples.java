@@ -59,6 +59,12 @@ public final class OpenApiExamples {
     public static final String SECURITY_EVENT_DETAIL_SUCCESS = """
             {"id":41,"eventId":"evt-video-20261029-001","userId":17,"triggerId":"trigger-keypad-001","triggerType":"KEYPAD","status":"ANALYZED","audioEventType":null,"audioProbability":null,"visionPrediction":"A18","visionConfidence":0.91,"visionAnalysisMode":"exhibition_rules","classProbabilities":"{\\"A18\\":0.91,\\"NORMAL\\":0.09}","visionEvents":"[{\\"eventType\\":\\"PERSON_DWELL_OBSERVED\\"}]","personCount":1,"videoDurationSeconds":4.2,"riskLevel":"HIGH","riskScore":82,"agentReason":"문 앞 배회 행동이 감지되었습니다.","triggeredAt":"2026-10-29T20:10:15+09:00","visionAnalyzedAt":"2026-10-29T20:10:19+09:00","createdAt":"2026-10-29T20:10:15","updatedAt":"2026-10-29T20:10:20"}
             """;
+    public static final String HOME_SUMMARY_SUCCESS = """
+            {"success":true,"code":"HOME_SUMMARY_RETRIEVED","message":"홈 화면 요약을 조회했습니다.","data":{"securityStatus":"HIGH","lastDetectedAt":"2026-10-31T14:20:00+09:00","todayEventCount":3}}
+            """;
+    public static final String CURRENT_USER_SUCCESS = """
+            {"success":true,"code":"CURRENT_USER_RETRIEVED","message":"사용자 정보를 조회했습니다.","data":{"name":"김가디","email":"guard@example.com","phoneNumber":"010-1234-5678"}}
+            """;
     public static final String VIDEO_URL_SUCCESS = """
             {"url":"https://omniguardy-media.s3.ap-northeast-2.amazonaws.com/videos/evt-video-20261029-001.mp4?X-Amz-Expires=300&X-Amz-Signature=example"}
             """;
@@ -95,6 +101,9 @@ public final class OpenApiExamples {
             """;
     public static final String SECURITY_EVENT_NOT_FOUND = """
             {"success":false,"status":404,"code":"SECURITY_EVENT_NOT_FOUND","message":"보안 이벤트를 찾을 수 없습니다.","data":null}
+            """;
+    public static final String USER_NOT_FOUND = """
+            {"success":false,"status":404,"code":"USER_NOT_FOUND","message":"사용자를 찾을 수 없습니다.","data":null}
             """;
     public static final String EMPTY_MEDIA_FILE = """
             {"success":false,"status":400,"code":"MEDIA_FILE_REQUIRED","message":"분석할 미디어 파일은 필수입니다.","data":null}

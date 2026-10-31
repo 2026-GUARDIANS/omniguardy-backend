@@ -4,6 +4,8 @@ import com.omniguardy.backend.domain.ai.presentation.dto.response.AiAnalyzeRespo
 import com.omniguardy.backend.domain.detection.application.model.AudioDetectionResult;
 import com.omniguardy.backend.domain.detection.presentation.dto.response.AudioUploadResponseDto;
 import com.omniguardy.backend.domain.detection.presentation.dto.response.VideoUploadResponseDto;
+import com.omniguardy.backend.domain.securityevent.application.model.HomeSummaryResponse;
+import com.omniguardy.backend.domain.user.presentation.dto.response.CurrentUserResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /** Documentation-only concrete response types for generic ApiResponse payloads. */
@@ -75,5 +77,13 @@ public final class OpenApiSchemas {
             @Schema(example = "로그아웃이 완료되었습니다.") String message,
             @Schema(nullable = true, example = "null") Object data
     ) {
+    }
+
+    @Schema(name = "HomeSummaryApiResponse")
+    public record HomeSummaryEnvelope(boolean success, String code, String message, HomeSummaryResponse data) {
+    }
+
+    @Schema(name = "CurrentUserApiResponse")
+    public record CurrentUserEnvelope(boolean success, String code, String message, CurrentUserResponse data) {
     }
 }

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 interface SpringDataSecurityEventRepository extends JpaRepository<SecurityEvent, Long> {
     @EntityGraph(attributePaths = "user")
@@ -19,4 +20,10 @@ interface SpringDataSecurityEventRepository extends JpaRepository<SecurityEvent,
 
     @EntityGraph(attributePaths = "user")
     Optional<SecurityEvent> findByEventIdAndUser_Id(String eventId, Long userId);
+
+    @EntityGraph(attributePaths = "user")
+    Optional<SecurityEvent> findFirstByUser_IdOrderByCreatedAtDescIdDesc(Long userId);
+
+    long countByUser_IdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Long userId, LocalDateTime start, LocalDateTime end);
 }
