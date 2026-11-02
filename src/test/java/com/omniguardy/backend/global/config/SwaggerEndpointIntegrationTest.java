@@ -133,4 +133,10 @@ class SwaggerEndpointIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['401']").exists())
                 .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['409']").exists());
     }
+
+    @Test void documentsDeviceAuthenticatedCompletionNotification() throws Exception {
+        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}/complete'].post.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}/complete'].post.responses['202']").exists());
+    }
 }

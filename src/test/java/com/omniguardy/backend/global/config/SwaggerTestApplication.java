@@ -68,6 +68,7 @@ import static org.mockito.Mockito.mock;
         EdgeVideoController.class,
         EdgeKeypadController.class,
         com.omniguardy.backend.domain.visionsession.presentation.VisionSessionController.class,
+        com.omniguardy.backend.domain.visionsession.presentation.VisionSessionCompletionController.class,
         com.omniguardy.backend.domain.visionsession.presentation.VisionEarlyEventController.class,
         TtsController.class,
         SwaggerTestApplication.TestController.class
@@ -107,6 +108,9 @@ class SwaggerTestApplication {
         return mock(com.omniguardy.backend.domain.visionsession.application.port.in.VisionSessionInputPort.class);
     }
     @Bean DetectionPresentationMapper detectionPresentationMapper() { return mock(DetectionPresentationMapper.class); }
+    @Bean com.omniguardy.backend.domain.visionsession.application.port.in.CompleteVisionSessionInputPort completion() {
+        return mock(com.omniguardy.backend.domain.visionsession.application.port.in.CompleteVisionSessionInputPort.class);
+    }
     @Bean com.omniguardy.backend.domain.visionsession.application.port.in.ReceiveVisionEarlyEventInputPort earlyEvents() {
         return mock(com.omniguardy.backend.domain.visionsession.application.port.in.ReceiveVisionEarlyEventInputPort.class);
     }

@@ -9,7 +9,8 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum VisionSessionSuccessCode implements BaseSuccessCode {
     VISION_SESSION_REGISTERED(HttpStatus.CREATED, "VISION_SESSION_REGISTERED", "Vision session registered."),
-    VISION_SESSION_FOUND(HttpStatus.OK, "VISION_SESSION_FOUND", "Vision session found.");
+    VISION_SESSION_FOUND(HttpStatus.OK, "VISION_SESSION_FOUND", "Vision session found."),
+    VISION_COMPLETION_ACCEPTED(HttpStatus.ACCEPTED, "VISION_COMPLETION_ACCEPTED", "Vision completion notification accepted.");
 
     private final HttpStatus status;
     private final String code;

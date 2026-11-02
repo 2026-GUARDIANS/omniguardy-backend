@@ -11,3 +11,24 @@ omniguardy:
   vision:
     callback:
       api-key: ${VISION_CALLBACK_API_KEY:}
+  streaming-agent:
+    enabled: ${STREAMING_AGENT_ENABLED:true}
+    preparation-lease: ${STREAMING_AGENT_PREPARATION_LEASE:30s}
+    calling-lease: ${STREAMING_AGENT_CALLING_LEASE:5m}
+    retry-delay: ${STREAMING_AGENT_RETRY_DELAY:10s}
+    max-attempts: ${STREAMING_AGENT_MAX_ATTEMPTS:3}
+    batch-size: ${STREAMING_AGENT_BATCH_SIZE:10}
+    scheduler-delay-ms: ${STREAMING_AGENT_SCHEDULER_DELAY_MS:1000}
+
+ai:
+  fastapi:
+    streaming-vision:
+      base-url: ${STREAMING_VISION_BASE_URL:http://localhost:8010}
+      polling-enabled: ${STREAMING_VISION_POLLING_ENABLED:true}
+      poll-interval: ${STREAMING_VISION_POLL_INTERVAL:2s}
+      max-wait: ${STREAMING_VISION_MAX_WAIT:5m}
+      connect-timeout: ${STREAMING_VISION_CONNECT_TIMEOUT:2s}
+      read-timeout: ${STREAMING_VISION_READ_TIMEOUT:5s}
+      lease-duration: ${STREAMING_VISION_LEASE_DURATION:30s}
+      batch-size: ${STREAMING_VISION_BATCH_SIZE:10}
+      scheduler-delay-ms: ${STREAMING_VISION_SCHEDULER_DELAY_MS:1000}
