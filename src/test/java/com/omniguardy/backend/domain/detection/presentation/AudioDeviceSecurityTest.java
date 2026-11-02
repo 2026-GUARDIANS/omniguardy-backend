@@ -59,6 +59,7 @@ class AudioDeviceSecurityTest {
                 .andExpect(status().isUnauthorized());
         // No handler is installed here; 404 confirms the legacy permitAll rule passed security.
         mvc.perform(post("/api/edge/audio")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/edge/video")).andExpect(status().isNotFound());
     }
 
     @Test void swaggerRoutesPassSecurityWithoutAuthentication() throws Exception {

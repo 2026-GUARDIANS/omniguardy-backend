@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum SecurityEventErrorCode implements BaseErrorCode {
+    AGENT_EXECUTION_CONFLICT(HttpStatus.CONFLICT, "AGENT_EXECUTION_CONFLICT", "Another execution owns this event; automatic replay is not allowed."),
     SECURITY_EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "SECURITY_EVENT_NOT_FOUND", "보안 이벤트를 찾을 수 없습니다."),
     VISION_ANALYSIS_REQUIRED(HttpStatus.CONFLICT, "VISION_ANALYSIS_REQUIRED", "영상 분석이 완료된 이벤트만 위험도를 판단할 수 있습니다."),
     INVALID_EVENT_STATUS(HttpStatus.CONFLICT, "INVALID_EVENT_STATUS", "현재 보안 이벤트 상태에서는 요청을 처리할 수 없습니다."),

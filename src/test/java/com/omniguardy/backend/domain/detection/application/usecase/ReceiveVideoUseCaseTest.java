@@ -109,6 +109,17 @@ class ReceiveVideoUseCaseTest {
         verify(agent).analyze("same-event");
         verify(repository, times(2)).save(same(event));
     }
+    @Test void concurrentAgentOwnerDoesNotBecomeLegacyAudioFailure() {
+        SecurityEvent event=SecurityEvent.builder().eventId("same-event").triggerId("same-event")
+                .triggerType(EventTriggerType.AUDIO).triggeredAt(time).status("CAMERA_REQUESTED").build();
+        when(repository.findByEventId("same-event")).thenReturn(Optional.of(event));
+        stubStorageAndVision(List.of());
+        doThrow(new com.omniguardy.backend.domain.securityevent.domain.error.AgentExecutionConflict()).when(agent).analyze("same-event");
+        var conflict=assertThrows(com.omniguardy.backend.domain.securityevent.domain.error.AgentExecutionConflict.class,
+                () -> useCase.receive(file,new VideoTriggerContext("same-event",null,TriggerType.AUDIO,null,null)));
+        assertEquals(409,conflict.getErrorCode().getStatus().value());
+        assertEquals("VISION_ANALYZED",event.getStatus()); verify(repository,times(2)).save(same(event));
+    }
 
     @Test void rejectsUnknownAudioEventWithoutCreatingOne() {
         assertThrows(BusinessException.class, () -> useCase.receive(file,

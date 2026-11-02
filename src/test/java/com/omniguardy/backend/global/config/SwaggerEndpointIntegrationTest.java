@@ -77,6 +77,11 @@ class SwaggerEndpointIntegrationTest {
                         .value("guard@example.com"))
                 .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.security[0].deviceApiKey")
                         .isArray())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions'].post.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}'].get.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions'].post.responses['409']").exists())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}'].get.responses['404']").exists())
                 .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.requestBody.content['application/json'].examples['노크 감지'].value.predicted_class")
                         .value("knock"))
                 .andExpect(jsonPath("$.paths['/api/internal/ai/audio-result'].post.responses['200'].content['application/json'].examples.AUDIO_RESULT_RECEIVED.value.data.outcome")
@@ -114,5 +119,35 @@ class SwaggerEndpointIntegrationTest {
         mvc.perform(get("/api/protected-test")
                         .header("Authorization", "Bearer valid-token"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void documentsVisionCallbackAuthenticationPayloadAndEmptySuccess() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.security[0].visionCallbackApiKey").isArray())
+                .andExpect(jsonPath("$.components.securitySchemes.visionCallbackApiKey.name").value("X-Vision-Callback-Key"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.requestBody.content['application/json'].schema['$ref']")
+                        .value("#/components/schemas/VisionEarlyEventRequest"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['204'].content").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['401']").exists())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['409']").exists());
+    }
+
+    @Test void documentsStorageOnlyVideoApi() throws Exception {
+        var path = "$.paths['/api/edge/vision/sessions/{sessionId}/video']";
+        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andExpect(jsonPath(path + ".post.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath(path + ".get.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath(path + ".post.requestBody.content['multipart/form-data']").exists())
+                .andExpect(jsonPath(path + ".post.responses['201']").exists())
+                .andExpect(jsonPath(path + ".post.responses['409']").exists())
+                .andExpect(jsonPath(path + ".post.responses['415']").exists());
+    }
+
+    @Test void documentsDeviceAuthenticatedCompletionNotification() throws Exception {
+        mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}/complete'].post.security[0].deviceApiKey").isArray())
+                .andExpect(jsonPath("$.paths['/api/edge/vision/sessions/{sessionId}/complete'].post.responses['202']").exists());
     }
 }
