@@ -8,3 +8,6 @@ spring:
 omniguardy:
   device:
     api-key: ${AUDIO_DEVICE_API_KEY:}
+  vision:
+    callback:
+      api-key: ${VISION_CALLBACK_API_KEY:}

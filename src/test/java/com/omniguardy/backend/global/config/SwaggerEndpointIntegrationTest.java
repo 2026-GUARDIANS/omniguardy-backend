@@ -120,4 +120,17 @@ class SwaggerEndpointIntegrationTest {
                         .header("Authorization", "Bearer valid-token"))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void documentsVisionCallbackAuthenticationPayloadAndEmptySuccess() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.security[0].visionCallbackApiKey").isArray())
+                .andExpect(jsonPath("$.components.securitySchemes.visionCallbackApiKey.name").value("X-Vision-Callback-Key"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.requestBody.content['application/json'].schema['$ref']")
+                        .value("#/components/schemas/VisionEarlyEventRequest"))
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['204'].content").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['401']").exists())
+                .andExpect(jsonPath("$.paths['/api/internal/ai/vision/early-events'].post.responses['409']").exists());
+    }
 }

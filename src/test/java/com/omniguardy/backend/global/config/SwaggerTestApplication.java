@@ -34,6 +34,7 @@ import com.omniguardy.backend.domain.tts.presentation.mapper.TtsPresentationMapp
 import com.omniguardy.backend.global.error.response.ErrorResponseWriter;
 import com.omniguardy.backend.global.security.auth.CustomUserDetailsService;
 import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
@@ -46,6 +47,7 @@ import tools.jackson.databind.ObjectMapper;
 import static org.mockito.Mockito.mock;
 
 @SpringBootConfiguration
+@TestComponent
 @EnableAutoConfiguration(exclude = {
         DataSourceAutoConfiguration.class,
         HibernateJpaAutoConfiguration.class
@@ -66,6 +68,7 @@ import static org.mockito.Mockito.mock;
         EdgeVideoController.class,
         EdgeKeypadController.class,
         com.omniguardy.backend.domain.visionsession.presentation.VisionSessionController.class,
+        com.omniguardy.backend.domain.visionsession.presentation.VisionEarlyEventController.class,
         TtsController.class,
         SwaggerTestApplication.TestController.class
 })
@@ -104,6 +107,9 @@ class SwaggerTestApplication {
         return mock(com.omniguardy.backend.domain.visionsession.application.port.in.VisionSessionInputPort.class);
     }
     @Bean DetectionPresentationMapper detectionPresentationMapper() { return mock(DetectionPresentationMapper.class); }
+    @Bean com.omniguardy.backend.domain.visionsession.application.port.in.ReceiveVisionEarlyEventInputPort earlyEvents() {
+        return mock(com.omniguardy.backend.domain.visionsession.application.port.in.ReceiveVisionEarlyEventInputPort.class);
+    }
     @Bean PublishTtsUseCase publishTtsUseCase() { return mock(PublishTtsUseCase.class); }
     @Bean TtsPresentationMapper ttsPresentationMapper() { return mock(TtsPresentationMapper.class); }
 

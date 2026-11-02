@@ -63,4 +63,16 @@ class OpenApiConfigTest {
         assertThat(query.getSecurity().getFirst()).containsKey(OpenApiConfig.DEVICE_API_KEY);
         assertThat(legacy.getSecurity()).isNull();
     }
+
+    @Test
+    void visionCallbackUsesDedicatedKeyRatherThanUserJwt() {
+        Operation callback = new Operation();
+        OpenAPI openApi = config.omniguardyOpenAPI().paths(new Paths()
+                .addPathItem("/api/internal/ai/vision/early-events", new PathItem().post(callback)));
+        config.jwtSecurityOpenApiCustomizer().customise(openApi);
+        assertThat(callback.getSecurity()).hasSize(1);
+        assertThat(callback.getSecurity().getFirst()).containsOnlyKeys(OpenApiConfig.VISION_CALLBACK_API_KEY);
+        assertThat(openApi.getComponents().getSecuritySchemes().get(OpenApiConfig.VISION_CALLBACK_API_KEY).getName())
+                .isEqualTo("X-Vision-Callback-Key");
+    }
 }

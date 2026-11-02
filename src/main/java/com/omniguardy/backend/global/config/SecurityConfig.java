@@ -31,6 +31,24 @@ public class SecurityConfig {
     private final ErrorResponseWriter errorResponseWriter;
 
     @Bean
+    @org.springframework.core.annotation.Order(0)
+    public SecurityFilterChain visionCallbackFilterChain(HttpSecurity http,
+            @org.springframework.beans.factory.annotation.Value("${omniguardy.vision.callback.api-key:}") String apiKey) throws Exception {
+        return http.securityMatcher("/api/internal/ai/vision/early-events", "/api/internal/ai/vision/early-events/**")
+                .csrf(csrf -> csrf.disable())
+                .formLogin(form -> form.disable())
+                .httpBasic(basic -> basic.disable())
+                .requestCache(cache -> cache.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) ->
+                        errorResponseWriter.write(response, GlobalErrorCode.AUTHENTICATION_REQUIRED)))
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasAuthority("VISION_CALLBACK"))
+                .addFilterBefore(new com.omniguardy.backend.global.security.auth.VisionCallbackAuthenticationFilter(
+                        apiKey, errorResponseWriter), UsernamePasswordAuthenticationFilter.class)
+                .build();
+    }
+
+    @Bean
     @org.springframework.core.annotation.Order(1)
     public SecurityFilterChain audioDeviceFilterChain(HttpSecurity http,
             @org.springframework.beans.factory.annotation.Value("${omniguardy.device.api-key:}") String apiKey) throws Exception {

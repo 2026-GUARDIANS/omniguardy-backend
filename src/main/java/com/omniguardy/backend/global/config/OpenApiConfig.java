@@ -20,6 +20,7 @@ public class OpenApiConfig {
 
     public static final String BEARER_AUTH = "bearerAuth";
     public static final String DEVICE_API_KEY = "deviceApiKey";
+    public static final String VISION_CALLBACK_API_KEY = "visionCallbackApiKey";
 
     private static final List<PathPattern> PUBLIC_API_PATHS = Arrays.stream(new String[]{
                     "/api/auth/signup",
@@ -56,13 +57,21 @@ public class OpenApiConfig {
                                 new SecurityScheme()
                                         .name("X-Device-Api-Key")
                                         .type(SecurityScheme.Type.APIKEY)
-                                        .in(SecurityScheme.In.HEADER)));
+                                        .in(SecurityScheme.In.HEADER))
+                        .addSecuritySchemes(VISION_CALLBACK_API_KEY,
+                                new SecurityScheme().name("X-Vision-Callback-Key")
+                                        .type(SecurityScheme.Type.APIKEY).in(SecurityScheme.In.HEADER)));
     }
 
     @Bean
     public OpenApiCustomizer jwtSecurityOpenApiCustomizer() {
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
             PathContainer requestPath = PathContainer.parsePath(path);
+            if (path.equals("/api/internal/ai/vision/early-events")) {
+                pathItem.readOperations().forEach(operation -> operation.setSecurity(
+                        List.of(new SecurityRequirement().addList(VISION_CALLBACK_API_KEY))));
+                return;
+            }
             if (VISION_DEVICE_API_PATH.matches(requestPath)) {
                 pathItem.readOperations().forEach(operation -> operation.setSecurity(
                         List.of(new SecurityRequirement().addList(DEVICE_API_KEY))));
