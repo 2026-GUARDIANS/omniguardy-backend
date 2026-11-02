@@ -65,6 +65,7 @@ import static org.mockito.Mockito.mock;
         EdgeAudioController.class,
         EdgeVideoController.class,
         EdgeKeypadController.class,
+        com.omniguardy.backend.domain.visionsession.presentation.VisionSessionController.class,
         TtsController.class,
         SwaggerTestApplication.TestController.class
 })
@@ -99,6 +100,9 @@ class SwaggerTestApplication {
     @Bean ReceiveAudioInputPort receiveAudioInputPort() { return mock(ReceiveAudioInputPort.class); }
     @Bean ReceiveVideoInputPort receiveVideoInputPort() { return mock(ReceiveVideoInputPort.class); }
     @Bean TriggerKeypadCameraUseCase triggerKeypadCameraUseCase() { return mock(TriggerKeypadCameraUseCase.class); }
+    @Bean com.omniguardy.backend.domain.visionsession.application.port.in.VisionSessionInputPort visionSessionInputPort() {
+        return mock(com.omniguardy.backend.domain.visionsession.application.port.in.VisionSessionInputPort.class);
+    }
     @Bean DetectionPresentationMapper detectionPresentationMapper() { return mock(DetectionPresentationMapper.class); }
     @Bean PublishTtsUseCase publishTtsUseCase() { return mock(PublishTtsUseCase.class); }
     @Bean TtsPresentationMapper ttsPresentationMapper() { return mock(TtsPresentationMapper.class); }

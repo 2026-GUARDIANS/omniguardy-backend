@@ -34,7 +34,7 @@ public class SecurityConfig {
     @org.springframework.core.annotation.Order(1)
     public SecurityFilterChain audioDeviceFilterChain(HttpSecurity http,
             @org.springframework.beans.factory.annotation.Value("${omniguardy.device.api-key:}") String apiKey) throws Exception {
-        return http.securityMatcher("/api/internal/ai/audio-result")
+        return http.securityMatcher("/api/internal/ai/audio-result", "/api/edge/vision/sessions", "/api/edge/vision/sessions/**")
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) ->

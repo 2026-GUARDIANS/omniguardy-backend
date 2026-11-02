@@ -36,6 +36,8 @@ public class OpenApiConfig {
 
     private static final PathPattern AUDIO_DEVICE_API_PATH =
             PathPatternParser.defaultInstance.parse("/api/internal/ai/audio-result");
+    private static final PathPattern VISION_DEVICE_API_PATH =
+            PathPatternParser.defaultInstance.parse("/api/edge/vision/sessions/**");
 
     @Bean
     public OpenAPI omniguardyOpenAPI() {
@@ -61,6 +63,11 @@ public class OpenApiConfig {
     public OpenApiCustomizer jwtSecurityOpenApiCustomizer() {
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
             PathContainer requestPath = PathContainer.parsePath(path);
+            if (VISION_DEVICE_API_PATH.matches(requestPath)) {
+                pathItem.readOperations().forEach(operation -> operation.setSecurity(
+                        List.of(new SecurityRequirement().addList(DEVICE_API_KEY))));
+                return;
+            }
             if (isPublicApi(requestPath) || AUDIO_DEVICE_API_PATH.matches(requestPath)) {
                 return;
             }

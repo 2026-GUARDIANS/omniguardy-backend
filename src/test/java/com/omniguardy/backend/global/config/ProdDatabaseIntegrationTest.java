@@ -45,7 +45,9 @@ class ProdDatabaseIntegrationTest {
         assertEquals("https://vision.invalid", env.getProperty("ai.fastapi.vision.base-url"));
         assertEquals("https://audio.invalid", env.getProperty("ai.fastapi.audio.base-url"));
         assertEquals("180", env.getProperty("ai.fastapi.vision.read-timeout-seconds"));
-        assertEquals(5, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class));
+        assertEquals(6, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM video_uploads", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM vision_sessions", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM keypad_camera_triggers", Integer.class));
     }
 }
