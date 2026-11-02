@@ -45,6 +45,7 @@ import static com.omniguardy.backend.domain.visionsession.StreamingVisionTestSup
         "AUDIO_DEVICE_API_KEY=unit-test-only", "OMNIGUARDY_DEMO_USERID=1", "AGENT_AI_ENABLED=false",
         "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid", "AI_FASTAPI_VISION_BASE_URL=https://vision.invalid",
         "ai.fastapi.streaming-vision.polling-enabled=false",
+        "omniguardy.vision-fallback.enabled=false",
         "FIREBASE_CREDENTIALS_PATH=/not-used-mocked.json", "AWS_REGION=ap-northeast-2", "S3_BUCKET_NAME=test-bucket"
 })
 class ProdDatabaseIntegrationTest {
@@ -62,6 +63,60 @@ class ProdDatabaseIntegrationTest {
     @Autowired VisionPollingRepository pollingJobs;
     @Autowired PollStreamingVisionService pollingWorker;
     @Autowired StreamingAgentRepository streamingAgentJobs;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.out.StreamingVideoRepository streamingVideos;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.out.VisionFallbackRepository fallbackJobs;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.model.VisionFallbackPolicy fallbackPolicy;
+    @Autowired com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard agentGuard;
+
+    @Test void mySqlFallbackAndAgentReservationsSurviveConcurrentDiscoveryAndRestart() throws Exception {
+        String marker="fallback-"+java.util.UUID.randomUUID(); String eventId=java.util.UUID.randomUUID().toString();
+        var pool=Executors.newFixedThreadPool(4);
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> keypadTriggers.record(marker,OffsetDateTime.now()));
+            sessions.insert(VisionSession.register(marker,KEYPAD,null,marker));
+            pollingJobs.enqueue(new com.omniguardy.backend.domain.visionsession.domain.model.VisionBinding(marker,KEYPAD,marker,null),Duration.ofMinutes(5));
+            pollingJobs.finish(pollingJobs.claim(marker,Duration.ofSeconds(30)).orElseThrow(),result(marker,marker,"KEYPAD",null),VisionFinalOutcome.VALID,"test",null,null);
+            streamingAgentJobs.enqueue(marker);
+            var v9=streamingAgentJobs.claim(marker,Duration.ofSeconds(30)).orElseThrow();
+            streamingAgentJobs.finish(v9,com.omniguardy.backend.domain.visionsession.domain.model.StreamingAgentJob.State.BLOCKED,"UNKNOWN_PERSON_COUNT","NOT_STARTED");
+            var discover=new ArrayList<Callable<Void>>();
+            for(int i=0;i<4;i++) discover.add(() -> { fallbackJobs.discover(fallbackPolicy); return null; });
+            for(var future:pool.invokeAll(discover,30,TimeUnit.SECONDS)) future.get();
+            assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM vision_fallback_jobs WHERE session_id=?",Integer.class,marker));
+            assertTrue(streamingAgentJobs.claim(marker,Duration.ofSeconds(30)).isEmpty());
+            var tasks=new ArrayList<Callable<Optional<com.omniguardy.backend.domain.visionsession.domain.model.VisionFallbackJob>>>();
+            for(int i=0;i<4;i++) tasks.add(() -> fallbackJobs.claim(marker,fallbackPolicy));
+            var claims=new ArrayList<com.omniguardy.backend.domain.visionsession.domain.model.VisionFallbackJob>();
+            for(var future:pool.invokeAll(tasks,30,TimeUnit.SECONDS)) future.get().ifPresent(claims::add);
+            assertEquals(1,claims.size()); var claim=claims.getFirst();
+            jdbc.update("INSERT INTO security_events (created_at,updated_at,event_id,trigger_id,trigger_type,triggered_at,status) VALUES (NOW(6),NOW(6),?,?,'KEYPAD',NOW(6),'VISION_ANALYZED')",eventId,marker);
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> fallbackJobs.prepared(claim,eventId,true,"AGENT_READY"));
+            var prepared=fallbackJobs.find(marker).orElseThrow();
+            var calls=new ArrayList<Callable<Boolean>>();
+            for(int i=0;i<4;i++) calls.add(() -> fallbackJobs.startCalling(prepared,fallbackPolicy));
+            int winners=0; for(var future:pool.invokeAll(calls,30,TimeUnit.SECONDS)) if(future.get()) winners++;
+            assertEquals(1,winners);
+            assertThrows(com.omniguardy.backend.domain.securityevent.domain.error.AgentExecutionConflict.class,() -> agentGuard.begin(eventId,null));
+            assertNotNull(agentGuard.begin(eventId,prepared.leaseToken()));
+            assertThrows(com.omniguardy.backend.domain.securityevent.domain.error.AgentExecutionConflict.class,() -> agentGuard.begin(eventId,prepared.leaseToken()));
+            jdbc.update("UPDATE vision_fallback_jobs SET lease_until='2000-01-01 00:00:00' WHERE session_id=?",marker);
+            assertTrue(fallbackJobs.claim(marker,fallbackPolicy).isEmpty());
+            fallbackJobs.reconcile(fallbackJobs.find(marker).orElseThrow(),false);
+            assertEquals("UNCERTAIN",fallbackJobs.find(marker).orElseThrow().state().name());
+            assertEquals("UNCERTAIN",jdbc.queryForObject("SELECT execution_state FROM security_agent_executions WHERE event_id=?",String.class,eventId));
+            assertEquals("BLOCKED",streamingAgentJobs.find(marker).orElseThrow().state().name());
+        } finally {
+            pool.shutdownNow();
+            jdbc.update("DELETE FROM security_agent_executions WHERE event_id=?",eventId);
+            jdbc.update("DELETE FROM vision_fallback_jobs WHERE session_id=?",marker);
+            jdbc.update("DELETE FROM streaming_agent_jobs WHERE session_id=?",marker);
+            jdbc.update("DELETE FROM vision_final_results WHERE session_id=?",marker);
+            jdbc.update("DELETE FROM vision_polling_jobs WHERE session_id=?",marker);
+            jdbc.update("DELETE FROM vision_sessions WHERE session_id=?",marker);
+            jdbc.update("DELETE FROM keypad_camera_triggers WHERE trigger_id=?",marker);
+            jdbc.update("DELETE FROM security_events WHERE event_id=?",eventId);
+        }
+    }
     @Test void additiveBaseMigrationPreservesExistingRows() {
         String marker = java.util.UUID.randomUUID().toString().substring(0, 16);
         jdbc.update("INSERT INTO users (created_at, updated_at, email, password, name, phone_number) VALUES (NOW(6),NOW(6),?,'synthetic','test',?)", marker + "@invalid", marker);
@@ -77,7 +132,9 @@ class ProdDatabaseIntegrationTest {
         assertEquals("https://vision.invalid", env.getProperty("ai.fastapi.vision.base-url"));
         assertEquals("https://audio.invalid", env.getProperty("ai.fastapi.audio.base-url"));
         assertEquals("180", env.getProperty("ai.fastapi.vision.read-timeout-seconds"));
-        assertEquals(9, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class));
+        assertEquals(11, jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM vision_fallback_jobs", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM streaming_session_videos", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM streaming_agent_jobs", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM vision_polling_jobs", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM vision_final_results", Integer.class));
@@ -85,6 +142,49 @@ class ProdDatabaseIntegrationTest {
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM video_uploads", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM vision_sessions", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM keypad_camera_triggers", Integer.class));
+    }
+
+    @Test void mySqlVideoClaimsAreUniqueAndStorageStateSurvivesRetries() throws Exception {
+        String marker = "video-" + java.util.UUID.randomUUID();
+        var pool = Executors.newFixedThreadPool(4);
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> keypadTriggers.record(marker, OffsetDateTime.now()));
+            sessions.insert(VisionSession.register(marker, KEYPAD, null, marker));
+            var info = new com.omniguardy.backend.domain.visionsession.infrastructure.video.Mp4VideoValidator()
+                    .validate(com.omniguardy.backend.domain.visionsession.StreamingMp4TestSupport.file(1));
+            var target = new com.omniguardy.backend.domain.detection.domain.model.VideoStorageTarget("S3", "bucket", "test.mp4", "s3://bucket/test.mp4");
+            var binding = new com.omniguardy.backend.domain.visionsession.domain.model.VisionBinding(marker, KEYPAD, marker, null);
+            var barrier = new CyclicBarrier(4);
+            var tasks = new ArrayList<Callable<Boolean>>();
+            for (int i = 0; i < 4; i++) tasks.add(() -> {
+                barrier.await(10, TimeUnit.SECONDS);
+                try { streamingVideos.reserve(binding, info, target, Duration.ofMinutes(5)); return true; }
+                catch (com.omniguardy.backend.global.error.exception.BusinessException conflict) {
+                    assertEquals("STREAMING_VIDEO_IN_PROGRESS", conflict.getErrorCode().getCode()); return false;
+                }
+            });
+            int winners = 0;
+            for (var future : pool.invokeAll(tasks, 30, TimeUnit.SECONDS)) if (future.get()) winners++;
+            assertEquals(1, winners);
+            var first = streamingVideos.find(marker).orElseThrow();
+            assertTrue(streamingVideos.find(marker.toUpperCase(java.util.Locale.ROOT)).isEmpty());
+            streamingVideos.failed(first, "STORAGE_FAILED");
+            var retry = streamingVideos.reserve(binding, info, target, Duration.ofMinutes(5));
+            assertEquals(2, retry.attempts());
+            streamingVideos.complete(retry);
+            assertEquals("STORED", streamingVideos.reserve(binding, info, target, Duration.ofMinutes(5)).state().name());
+            assertThrows(com.omniguardy.backend.global.error.exception.BusinessException.class, () -> streamingVideos.complete(first));
+            var rejected = assertThrows(org.springframework.dao.DataAccessException.class,
+                    () -> jdbc.update("UPDATE streaming_session_videos SET upload_state='UPLOADING' WHERE session_id=?", marker));
+            assertTrue(rejected.getMostSpecificCause().getMessage().contains("ck_streaming_video_state"));
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM streaming_session_videos WHERE session_id=?", Integer.class, marker));
+            assertEquals("REGISTERED", sessions.findBySessionId(marker).orElseThrow().status().name());
+        } finally {
+            pool.shutdownNow();
+            jdbc.update("DELETE FROM streaming_session_videos WHERE session_id=?", marker);
+            jdbc.update("DELETE FROM vision_sessions WHERE session_id=?", marker);
+            jdbc.update("DELETE FROM keypad_camera_triggers WHERE trigger_id=?", marker);
+        }
     }
 
     @Test void mySqlConcurrentCallbackRetriesCommitOnceAndIdentifiersRemainCaseSensitive() throws Exception {

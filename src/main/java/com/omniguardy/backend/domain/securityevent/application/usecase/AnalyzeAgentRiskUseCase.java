@@ -29,16 +29,36 @@ public class AnalyzeAgentRiskUseCase {
     private final ObjectMapper objectMapper;
     private final RiskResponseService riskResponseService;
     private final AgentPerformanceMetrics performanceMetrics;
+    private com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard executionGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setExecutionGuard(com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard guard) {
+        this.executionGuard = guard;
+    }
 
     public AgentAssessment analyze(String eventId) {
+        return analyzeReserved(eventId, null);
+    }
+
+    /** Same Agent contract/rules; fallback supplies its durable event reservation token. */
+    public AgentAssessment analyzeReserved(String eventId, String reservationToken) {
         long startedNanos = System.nanoTime();
         EventTriggerType eventType = null;
         boolean success = false;
         Throwable failure = null;
+        boolean assessmentRecorded = false;
+        com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard.Claim execution = null;
         try {
             SecurityEvent event = securityEventRepository.findByEventId(eventId)
                     .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
             eventType = event.getTriggerType();
+            if (executionGuard != null) {
+                execution = executionGuard.begin(eventId, reservationToken);
+                if (execution.alreadyCompleted()) {
+                    success = true;
+                    return execution.completedAssessment();
+                }
+            }
             if (!event.isVisionAnalyzed()) {
                 throw new BusinessException(SecurityEventErrorCode.VISION_ANALYSIS_REQUIRED);
             }
@@ -51,6 +71,7 @@ public class AnalyzeAgentRiskUseCase {
                         requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
                 event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
                 securityEventRepository.save(event);
+                assessmentRecorded = true;
             } catch (RuntimeException exception) {
                 event.fail();
                 securityEventRepository.save(event);
@@ -58,10 +79,15 @@ public class AnalyzeAgentRiskUseCase {
             }
 
             riskResponseService.respond(event, assessment.riskLevel());
+            if (execution != null) executionGuard.succeeded(execution);
             success = true;
             return assessment;
         } catch (RuntimeException | Error exception) {
             failure = exception;
+            if (execution != null && !execution.alreadyCompleted()) {
+                try { executionGuard.failed(execution, reservationToken != null || assessmentRecorded); }
+                catch (RuntimeException ignored) { /* A durable CALLING row stays fenced when DB is unavailable. */ }
+            }
             throw exception;
         } finally {
             performanceMetrics.recordAgentExecution(

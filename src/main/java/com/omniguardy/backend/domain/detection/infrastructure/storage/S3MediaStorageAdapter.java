@@ -2,6 +2,8 @@ package com.omniguardy.backend.domain.detection.infrastructure.storage;
 
 import com.omniguardy.backend.domain.detection.application.model.MediaFile;
 import com.omniguardy.backend.domain.detection.application.port.out.MediaStoragePort;
+import com.omniguardy.backend.domain.detection.application.port.out.StreamingMediaStoragePort;
+import com.omniguardy.backend.domain.detection.domain.model.VideoStorageTarget;
 import com.omniguardy.backend.domain.detection.domain.error.DetectionErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +19,7 @@ import java.util.UUID;
 @Component
 @Primary
 @Profile("prod")
-public class S3MediaStorageAdapter implements MediaStoragePort {
+public class S3MediaStorageAdapter implements MediaStoragePort, StreamingMediaStoragePort {
     private final S3Client s3;
     private final LocalMediaStorageAdapter local;
     private final String bucket;
@@ -30,6 +32,16 @@ public class S3MediaStorageAdapter implements MediaStoragePort {
             throw new IllegalArgumentException("S3_BUCKET_NAME and a valid S3_VIDEO_PREFIX are required");
     }
     @Override public StoredMedia saveAudio(String eventId, MediaFile file) { return local.saveAudio(eventId, file); }
+    @Override public VideoStorageTarget planStreamingVideo(String sessionId, String sha256) {
+        String filename = UUID.nameUUIDFromBytes(("STREAMING:" + sessionId).getBytes(StandardCharsets.UTF_8))
+                + "-" + sha256 + ".mp4";
+        return new VideoStorageTarget("S3", bucket, filename, prefix + "/" + filename);
+    }
+    @Override public StoredMedia storeStreamingVideo(String sessionId, VideoStorageTarget target, MediaFile file) {
+        if (!target.equals(planStreamingVideo(sessionId, file.sha256())))
+            throw new IllegalStateException("Streaming storage target no longer matches configuration or content");
+        return saveVideo("STREAMING:" + sessionId, file);
+    }
     @Override public StoredMedia saveVideo(String eventId, MediaFile file) {
         String digest = file.sha256();
         String filename = UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)) + "-" + digest + ".mp4";

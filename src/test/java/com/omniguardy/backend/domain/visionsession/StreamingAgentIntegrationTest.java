@@ -39,7 +39,7 @@ import static org.mockito.Mockito.*;
         "JWT_SECRET_KEY=streaming-agent-test-secret-at-least-32-bytes", "AUDIO_DEVICE_API_KEY=test-key",
         "MQTT_BROKER_URL=tcp://127.0.0.1:1", "MQTT_USERNAME=backend", "MQTT_PASSWORD=test-only",
         "OMNIGUARDY_DEMO_USERID=1", "AGENT_AI_ENABLED=false", "ai.fastapi.streaming-vision.polling-enabled=false",
-        "omniguardy.streaming-agent.enabled=false", "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid",
+        "omniguardy.streaming-agent.enabled=false", "omniguardy.vision-fallback.enabled=false", "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid",
         "AI_FASTAPI_VISION_BASE_URL=https://vision.invalid", "FIREBASE_CREDENTIALS_PATH=/mocked-not-used.json",
         "AWS_REGION=ap-northeast-2", "S3_BUCKET_NAME=test-only"
 })
@@ -49,6 +49,9 @@ class StreamingAgentIntegrationTest {
     @MockitoBean NotificationService notifications;
     @MockitoBean PlaySoundUseCase sound;
     @MockitoBean DemoUserResolver owner;
+    @MockitoBean software.amazon.awssdk.services.s3.S3Client s3;
+    @MockitoBean StreamingVisionQueryPort streamingVision;
+    @MockitoBean com.omniguardy.backend.domain.detection.application.port.out.VisionAnalysisPort legacyVision;
     @MockitoBean(name = "visionStreamingClock") Clock clock;
     @Autowired JdbcTemplate jdbc;
     @Autowired SecurityEventRepository securityEvents;
@@ -60,6 +63,7 @@ class StreamingAgentIntegrationTest {
     @Autowired StreamingAgentEventPort eventPort;
     @Autowired ProcessStreamingAgentService worker;
     @Autowired PlatformTransactionManager transactions;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.StreamingSessionVideoInputPort videos;
     MutableClock time;
     User user;
     java.sql.Connection schema;
@@ -67,16 +71,17 @@ class StreamingAgentIntegrationTest {
     @BeforeAll void migrations() throws Exception {
         schema = Objects.requireNonNull(jdbc.getDataSource()).getConnection();
         for (String file : List.of("V6__create_vision_sessions.sql", "V7__create_vision_early_events.sql",
-                "V8__create_vision_polling_and_final_results.sql", "V9__create_streaming_agent_jobs.sql")) {
+                "V8__create_vision_polling_and_final_results.sql", "V9__create_streaming_agent_jobs.sql", "V10__create_streaming_session_videos.sql", "V11__create_vision_fallback_jobs.sql")) {
             var ddl = Files.readString(Path.of("src/main/resources/db/migration/" + file))
-                    .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin", "");
+                    .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin", "")
+                    .replace(" CHARACTER SET ascii COLLATE ascii_bin", "");
             new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(
                     ddl.getBytes(java.nio.charset.StandardCharsets.UTF_8))).populate(schema);
         }
     }
     @AfterAll void close() throws Exception { schema.close(); }
     @BeforeEach void setup() {
-        for (String table : List.of("streaming_agent_jobs", "vision_final_results", "vision_polling_jobs", "vision_early_events",
+        for (String table : List.of("security_agent_executions", "vision_fallback_jobs", "streaming_session_videos", "streaming_agent_jobs", "vision_final_results", "vision_polling_jobs", "vision_early_events",
                 "vision_sessions", "keypad_camera_triggers", "security_events", "users")) jdbc.update("DELETE FROM " + table);
         time = new MutableClock(); when(clock.instant()).thenAnswer(call -> time.instant());
         user = users.save(User.builder().email("streaming@test.invalid").name("test").password("synthetic").phoneNumber("010-test").build());
@@ -85,6 +90,24 @@ class StreamingAgentIntegrationTest {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "Agent call must not hold a DB transaction");
             return new AgentAssessment(RiskLevel.LOW, 42, "기존 입력의 감지 이벤트를 확인했습니다.");
         });
+    }
+
+    @Test void videoUploadUsesS3OnlyAndNeverRunsEitherVisionAgentOrResponse() {
+        seedKeypad("keypad-video", "SILENT_SIGNAL", 1);
+        seedAudio("audio-video", "CAMERA_OCCLUSION_SUSPECTED");
+        var before = securityEvents.findByEventId("audio-video-event").orElseThrow();
+        assertTrue(videos.upload("keypad-video", StreamingMp4TestSupport.file(1)).storedNow());
+        assertTrue(videos.upload("audio-video", StreamingMp4TestSupport.file(2)).storedNow());
+        assertFalse(videos.upload("keypad-video", StreamingMp4TestSupport.file(1)).storedNow());
+        assertEquals(1, countEvents());
+        var after = securityEvents.findByEventId("audio-video-event").orElseThrow();
+        assertEquals(before.getStatus(), after.getStatus()); assertEquals(before.getAudioProbability(), after.getAudioProbability());
+        assertNull(after.getVideoPath()); assertNull(videos.find("keypad-video").securityEventId());
+        assertEquals("audio-video-event", videos.find("audio-video").securityEventId());
+        verify(s3, times(2)).putObject(any(software.amazon.awssdk.services.s3.model.PutObjectRequest.class),
+                any(software.amazon.awssdk.core.sync.RequestBody.class));
+        verifyNoInteractions(legacyVision, streamingVision, risk, notifications, sound);
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM streaming_agent_jobs", Integer.class));
     }
 
     @Test void validKeypadReusesExistingAssessmentAndResponseExactlyOnce() {

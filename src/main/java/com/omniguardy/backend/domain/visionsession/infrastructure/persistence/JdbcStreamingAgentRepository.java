@@ -26,6 +26,7 @@ public class JdbcStreamingAgentRepository implements StreamingAgentRepository {
             WHERE f.eligible_for_agent = TRUE AND f.outcome = 'VALID' AND f.analysis_state = 'COMPLETED'
               AND f.result_status = 'success' AND f.fallback_required = FALSE
               AND s.status = 'COMPLETED' AND v.processing_state = 'SUCCEEDED' AND v.trigger_type = s.trigger_type
+              AND NOT EXISTS (SELECT 1 FROM vision_fallback_jobs b WHERE b.session_id=s.session_id AND b.processing_state<>'SKIPPED')
               AND ((s.trigger_type = 'KEYPAD' AND f.analysis_completeness = 'COMPLETE_KEYPAD'
                     AND s.event_id IS NULL AND v.security_event_id IS NULL AND s.trigger_id = v.trigger_id)
                 OR (s.trigger_type = 'AUDIO' AND f.analysis_completeness = 'COMPLETE_AUDIO'
@@ -76,6 +77,9 @@ public class JdbcStreamingAgentRepository implements StreamingAgentRepository {
 
     @Override @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<StreamingAgentJob> claim(String id, Duration lease) {
+        // The fallback worker uses this same session lock before claiming ownership.
+        jdbc.queryForList("SELECT session_id FROM vision_sessions WHERE session_id=? FOR UPDATE", String.class, id);
+        if (!jdbc.queryForList("SELECT session_id FROM vision_fallback_jobs WHERE session_id=? AND processing_state<>'SKIPPED'", String.class, id).isEmpty()) return Optional.empty();
         var now = now();
         int count = jdbc.update("""
                 UPDATE streaming_agent_jobs SET processing_state = 'PREPARING', attempts = attempts + 1,
@@ -101,6 +105,7 @@ public class JdbcStreamingAgentRepository implements StreamingAgentRepository {
 
     @Override @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean startCalling(StreamingAgentJob job, Duration lease) {
+        jdbc.queryForList("SELECT session_id FROM vision_sessions WHERE session_id=? FOR UPDATE", String.class, job.sessionId());
         var now = now();
         return jdbc.update("""
                 UPDATE streaming_agent_jobs SET processing_state = 'CALLING', agent_attempts = agent_attempts + 1,

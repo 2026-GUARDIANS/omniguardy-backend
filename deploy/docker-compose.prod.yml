@@ -10,6 +10,14 @@ services:
       FIREBASE_CREDENTIALS_PATH: /run/secrets/firebase-service-account.json
       AWS_EC2_METADATA_V1_DISABLED: "true"
       MYSQL_ROOT_PASSWORD: "" # The backend does not need the MySQL root credential.
+      # Initial EC2 rollout enables V8/V9/V11 workers; optional tuning comes from env_file.
+      STREAMING_VISION_POLLING_ENABLED: ${STREAMING_VISION_POLLING_ENABLED:-true}
+      STREAMING_AGENT_ENABLED: ${STREAMING_AGENT_ENABLED:-true}
+      VISION_FALLBACK_ENABLED: ${VISION_FALLBACK_ENABLED:-true}
+      # This compose file has no Vision service. Supply the EC2-reachable Streaming origin.
+      STREAMING_VISION_BASE_URL: ${STREAMING_VISION_BASE_URL:?Set the reachable Streaming Vision base URL}
+      VISION_CALLBACK_API_KEY: ${VISION_CALLBACK_API_KEY:?Set a separate Vision callback key}
+      # AGENT_AI_ENABLED and all existing LEGACY/infrastructure settings retain env_file values.
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

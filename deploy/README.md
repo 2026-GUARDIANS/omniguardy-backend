@@ -2,12 +2,14 @@
 
 이 디렉터리는 배포용 설정과 실행 안내입니다. AWS 리소스 생성, 실제 배포, Docker Hub 업로드는 수행하지 않았습니다. 실제 비밀값은 예제에 없습니다. 검증 결과는 [VALIDATION.md](VALIDATION.md), 파일별 변경 목록은 [CHANGES.md](CHANGES.md)를 참조하세요.
 
+V6~V11 Streaming의 초기 활성화·환경변수 전달 및 기존 작업/중복 Agent 점검은 [STREAMING.md](STREAMING.md)를 먼저 확인합니다. 아래의 과거 검증 결과는 해당 검증 당시 범위입니다.
+
 ## 배포 전 우선순위
 
 1. **P0**: 운영 도메인/DNS·HTTPS, Firebase JSON, DB/JWT/MQTT/장치 키, Audio/Vision ngrok HTTPS 주소, S3 버킷과 EC2 IAM Role을 준비합니다. IAM·인증·실제 AI 응답은 로컬 Mock 테스트만으로 보장되지 않습니다.
-2. **P0**: 새 DB는 Flyway V1~V5로 시작합니다. 기존 DB를 가져올 때에는 아래 마이그레이션 절차를 먼저 수행해야 합니다. `ddl-auto=validate`를 유지합니다.
+2. **P0**: 현재 새 DB는 Flyway V1~V11로 시작합니다. 기존 DB를 가져올 때에는 아래 마이그레이션 절차와 [Streaming 점검](STREAMING.md)을 먼저 수행해야 합니다. `ddl-auto=validate`를 유지합니다.
 3. **P0**: 앱 회원가입으로 실제 사용자를 만든 다음 `OMNIGUARDY_DEMO_USERID`를 해당 ID로 지정합니다. 현재 Pi 이벤트는 이 사용자의 이벤트로 귀속됩니다. 다중 가정/다중 사용자 장치 소유권 모델은 이번 범위에 포함되지 않습니다.
-4. **P0**: MQTT SSH 터널/VPN을 Pi에 구성합니다. 1883은 보안 그룹에서 열지 않습니다. 기존 `/api/edge/**`, `/api/keypad/**`, `/api/sounds/**`의 익명 접근 계약은 유지되므로 인터넷 공개 시 Nginx 접근 제한/VPN 또는 향후 별도 장치 인증이 필요합니다. `AUDIO_DEVICE_API_KEY`는 `/api/internal/ai/audio-result`만 보호합니다.
+4. **P0**: MQTT SSH 터널/VPN을 Pi에 구성합니다. 1883은 보안 그룹에서 열지 않습니다. `/api/edge/vision/sessions/**`와 `/api/internal/ai/audio-result`는 `AUDIO_DEVICE_API_KEY`로 보호합니다. 나머지 기존 익명 Edge/Keypad/Sound API를 인터넷에 공개할 때에는 Nginx 접근 제한/VPN을 검토합니다.
 5. **P1**: 메모리·디스크·업로드 시간·FCM 푸시·Pi 실제 촬영/사운드를 스테이징에서 측정합니다. 1GiB 메모리에서 세 서비스와 OS/Nginx가 여유롭게 실행된다고 보장하지 않습니다. 메모리가 작은 호스트는 암호화된 디스크의 swap과 모니터링이 필요하며, 가능하면 2GiB 이상을 사용합니다. 프리티어 적용 여부는 해당 AWS 계정에서 확인합니다.
 6. **P1**: MySQL 백업/복구, S3 보관 기간, 실패 업로드 이력 점검, 인증서 갱신, 고정 이미지 태그와 롤백 절차를 준비합니다.
 
@@ -100,8 +102,8 @@ EC2에서 `deploy/.env.prod.example`을 `.env.prod`로 복사해 작성합니다
 
 - 기존 V1/V2는 테이블이 없으면 no-op입니다. V3는 오디오 수신 이력 테이블을 만듭니다. 기존 파일·checksum은 수정하지 않았습니다.
 - V4는 빠진 기본 테이블만 `CREATE TABLE IF NOT EXISTS`로 생성합니다. V5는 영상 이력 테이블을 추가합니다. prod는 baseline-on-migrate=false, ddl-auto=validate입니다. Flyway 자동 설정을 위해 Spring Boot 4용 starter를 사용합니다. [Spring Boot 4 변경 안내](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
-- **빈 새 DB:** V1→V5를 실행한 후 Hibernate validate로 검사합니다. 앱 사용자는 자동 생성되지 않습니다. 회원가입 후 실제 사용자 ID를 지정합니다.
-- **기존 Flyway 이력이 있는 DB:** 백업과 복제 DB에서 이력·스키마를 확인하고 V4/V5만 추가 적용합니다. V4는 기존 테이블의 누락 컬럼을 자동 보정하지 않으므로 validate 실패 시 별도 검토한 새 마이그레이션이 필요합니다.
+- **빈 새 DB:** V1→V11을 실행한 후 Hibernate validate로 검사합니다. 앱 사용자는 자동 생성되지 않습니다. 회원가입 후 실제 사용자 ID를 지정합니다.
+- **기존 Flyway 이력이 있는 DB:** 백업과 복제 DB에서 이력·스키마를 확인하고 현재 완료 버전 다음부터 V11까지 순서대로 적용합니다. V4는 기존 테이블의 누락 컬럼을 자동 보정하지 않으므로 validate 실패 시 별도 검토한 새 마이그레이션이 필요합니다.
 - **기존 이력이 없는 DB:** 자동 baseline을 켜지 않습니다. V1~V3가 이미 반영되어 있는지 확인한 뒤, 검토된 정확한 버전으로 명시적 Flyway baseline을 수행하는 별도 작업이 필요합니다. 예를 들어 모든 V1~V3 구조가 실제 존재할 때만 baseline 3을 검토합니다. 확인 없이 baseline하거나 V3를 다시 실행하면 기존 테이블 충돌이 납니다.
 - dev/test는 기존 Hibernate update/create-drop 동작을 유지하도록 Flyway 자동 실행을 끕니다. 개발 `.env` import만 dev 파일로 이동했으며 기존 MQTT 주소 등 사용자 변경은 유지했습니다.
 - 기존 코드에서는 Domain Model이 JPA Entity도 겸합니다. 이번에 전체 모델을 분리하지 않고 기존 구조를 유지했습니다. 새 외부 연동은 Application Port → Infrastructure Adapter이며 새 영상 이력은 JDBC 구현이므로 Domain에 S3 SDK를 추가하지 않았습니다.

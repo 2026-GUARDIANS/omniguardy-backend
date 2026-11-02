@@ -157,6 +157,9 @@ public class ReceiveVideoUseCase implements ReceiveVideoInputPort {
 
         } catch (RuntimeException exception) {
 
+            // An event-wide owner conflict is not a new analysis failure. Preserve the active owner's state.
+            if (exception instanceof com.omniguardy.backend.domain.securityevent.domain.error.AgentExecutionConflict) throw exception;
+
             event.fail();
 
             securityEventRepository.save(event);
