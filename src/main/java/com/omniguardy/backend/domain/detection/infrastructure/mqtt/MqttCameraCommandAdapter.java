@@ -1,7 +1,9 @@
 package com.omniguardy.backend.domain.detection.infrastructure.mqtt;
 
 import com.omniguardy.backend.domain.detection.application.model.CameraStartCommand;
+import com.omniguardy.backend.domain.detection.application.model.TriggerType;
 import com.omniguardy.backend.domain.detection.application.port.out.CameraCommandPort;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.omniguardy.backend.global.mqtt.MqttConfig.MqttGateway;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +28,9 @@ public class MqttCameraCommandAdapter implements CameraCommandPort {
                 command.triggerId(),
                 command.triggerType().name(),
                 command.securityEventId(),
-                command.triggeredAt().toString()
+                command.triggeredAt().toString(),
+                // AUDIO consumers need both IDs; retain securityEventId and all existing fields.
+                command.triggerType() == TriggerType.AUDIO ? command.securityEventId() : null
         );
         String payload = objectMapper.writeValueAsString(message);
 
@@ -39,7 +43,8 @@ public class MqttCameraCommandAdapter implements CameraCommandPort {
             String triggerId,
             String triggerType,
             String securityEventId,
-            String triggeredAt
+            String triggeredAt,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String eventId
     ) {
     }
 }
