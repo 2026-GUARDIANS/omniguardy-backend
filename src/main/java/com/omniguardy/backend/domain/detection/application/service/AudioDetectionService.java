@@ -44,8 +44,9 @@ public class AudioDetectionService {
                 .audioPath(stored == null ? null : stored.path()).status("AUDIO_DETECTED").build();
         event.connectAudioTrigger(eventId, triggeredAt);
         securityEventRepository.save(event);
-        cameraCommandPort.startCamera(new CameraStartCommand(eventId, TriggerType.AUDIO,
-                eventId, triggeredAt, 10));
+        // Publish the issued trigger held by the event, not a separately reconstructed ID.
+        cameraCommandPort.startCamera(new CameraStartCommand(event.getTriggerId(), TriggerType.AUDIO,
+                event.getEventId(), event.getTriggeredAt(), 10));
         event.markCameraRequested();
         return new AudioDetectionResult(eventId, TRIGGERED, stored == null ? null : stored.filename());
     }

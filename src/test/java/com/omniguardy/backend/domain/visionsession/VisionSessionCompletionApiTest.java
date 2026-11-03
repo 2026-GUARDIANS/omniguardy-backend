@@ -65,6 +65,15 @@ class VisionSessionCompletionApiTest {
                 .andExpect(status().isAccepted()).andExpect(jsonPath("data.processingState").value("SUCCEEDED"));
         verify(jobs, times(1)).enqueue(any(), any());
     }
+    @Test void unsolicitedFailureBodyDoesNotCreateAFailureNotificationContract() throws Exception {
+        when(jobs.enqueue(any(), any())).thenReturn(job(VisionProcessingState.PENDING));
+        mvc.perform(post(URL).header("X-Device-Api-Key", "device-key").contentType("application/json")
+                        .content("{\"status\":\"failed\",\"reason\":\"FRAME_UPLOAD_FAILED\"}"))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("data.processingState").value("PENDING"))
+                .andExpect(jsonPath("data.fallbackRequired").value(false));
+        verify(jobs).enqueue(any(), any());
+    }
+
     @Test void rejectsUnknownAndInvalidSession() throws Exception {
         mvc.perform(post("/api/edge/vision/sessions/missing/complete").header("X-Device-Api-Key", "device-key"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("VISION_SESSION_NOT_FOUND"));

@@ -74,6 +74,8 @@ class VisionFallbackIntegrationTest {
     @Autowired ProcessStreamingAgentService streamingWorker;
     @Autowired VisionFallbackRepository jobs;
     @Autowired ProcessVisionFallbackService worker;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.CompleteVisionSessionInputPort completion;
+    @Autowired PollStreamingVisionService pollingWorker;
     @Autowired VisionFallbackEventPort events;
     @Autowired VisionFallbackPolicy policy;
     @Autowired StreamingSessionVideoInputPort videos;
@@ -123,6 +125,24 @@ class VisionFallbackIntegrationTest {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive()); return new AgentAssessment(RiskLevel.LOW,72,"existing assessment");
         });
     }
+    @Test void registeredSessionAndStoredMp4AloneDoNotStartPollingOrFallback() {
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> keypad.record("trigger",OffsetDateTime.ofInstant(time.instant(),ZoneOffset.UTC)));
+        sessions.insert(VisionSession.register("session",VisionTriggerType.KEYPAD,null,"trigger"));
+        upload("session"); time.advance(Duration.ofMinutes(20)); worker.processDue(); pollingWorker.pollDue();
+        assertTrue(polling.find("session").isEmpty()); assertTrue(jobs.find("session").isEmpty());
+        verifyNoInteractions(streaming,vision,risk,notifications,sound);
+    }
+    @Test void springCompletionQueuesPollingThenObservedVisionFailureStartsFallback() {
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> keypad.record("trigger",OffsetDateTime.ofInstant(time.instant(),ZoneOffset.UTC)));
+        sessions.insert(VisionSession.register("session",VisionTriggerType.KEYPAD,null,"trigger")); upload("session");
+        when(streaming.status("session")).thenReturn(new com.omniguardy.backend.domain.visionsession.infrastructure.streaming.StreamingVisionJsonMapper()
+                .status(statusJson("session","trigger","KEYPAD",null).replace("COMPLETED","FAILED").replace("\"finalResultAvailable\":true","\"finalResultAvailable\":false")));
+        completion.complete("session"); worker.processDue(); assertTrue(jobs.find("session").isEmpty());
+        pollingWorker.pollDue(); assertEquals(VisionProcessingState.FALLBACK_REQUIRED,polling.find("session").orElseThrow().state());
+        worker.processDue(); assertEquals(VisionFallbackJob.State.SUCCEEDED,jobs.find("session").orElseThrow().state());
+        verify(streaming).status("session"); verify(streaming,never()).result(anyString()); verify(vision).analyze(any(),any()); verify(risk).assess(any());
+    }
+
     @Test void partialKeypadUsesOriginalMp4ExistingAgentAndResponseOnce() throws Exception {
         seed("session",VisionTriggerType.KEYPAD,VisionFinalOutcome.PARTIAL); upload("session");
         String raw=jdbc.queryForObject("SELECT raw_result_json FROM vision_final_results",String.class);

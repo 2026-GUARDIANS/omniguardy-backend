@@ -43,6 +43,10 @@ class AudioResultIntegrationTest {
     @Autowired CameraCommandPort camera;
     @Autowired MediaStoragePort storage;
     @Autowired DataSource dataSource;
+    @Autowired SecurityEventRepository events;
+    @Autowired AudioDetectionReceiptPort receipts;
+    @Autowired DemoUserResolver users;
+    @Autowired PlatformTransactionManager transactions;
 
     @BeforeEach void resetDatabase() {
         var jdbc = new JdbcTemplate(dataSource);
@@ -77,6 +81,32 @@ class AudioResultIntegrationTest {
         assertNull(new JdbcTemplate(dataSource).queryForObject("select audio_path from security_events", String.class));
         verify(camera, times(1)).startCamera(any());
         verifyNoInteractions(storage);
+    }
+
+    @Test void mqttPayloadUsesPersistedAudioTriggerAndEventIdsIncludingLegacyFields() {
+        var gateway = mock(com.omniguardy.backend.global.mqtt.MqttConfig.MqttGateway.class);
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var adapter = new com.omniguardy.backend.domain.detection.infrastructure.mqtt.MqttCameraCommandAdapter(gateway, mapper);
+        ReflectionTestUtils.setField(adapter, "cameraTopic", "door/camera");
+        var publisher = new AudioDetectionService(storage, adapter, events, users, receipts);
+        var result = new org.springframework.transaction.support.TransactionTemplate(transactions).execute(
+                tx -> publisher.process(new AudioAnalysis(AudioEventType.KNOCK, 0.98), null, "mqtt-detection"));
+        var stored = events.findByEventId(result.eventId()).orElseThrow();
+        var message = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(gateway).sendToMqtt(message.capture(), eq("door/camera"));
+        var json = mapper.readTree(message.getValue());
+        assertEquals(stored.getEventId(), json.get("eventId").asText());
+        assertEquals(stored.getTriggerId(), json.get("triggerId").asText());
+        assertEquals(stored.getEventId(), json.get("securityEventId").asText());
+        assertEquals(stored.getEventId(), stored.getTriggerId());
+        assertEquals(stored.getTriggerType().name(), json.get("triggerType").asText());
+        // MQTT preserves the original precision; DATETIME(6) may round the persisted time by <1 microsecond.
+        assertTrue(java.time.Duration.between(stored.getTriggeredAt().toInstant(),
+                java.time.OffsetDateTime.parse(json.get("triggeredAt").asText()).toInstant()).abs().toNanos() <= 1000);
+        assertNotEquals(stored.getId().toString(), json.get("triggerId").asText());
+        assertNotEquals("mqtt-detection", json.get("eventId").asText());
+        assertEquals("CAMERA_START", json.get("type").asText()); assertEquals(10, json.get("duration").asInt());
+        assertEquals("CAMERA_REQUESTED", stored.getStatus()); assertEquals(1, count("security_events"));
     }
 
     @Test void suppressedAndBackgroundReceiptsSurviveAndCannotTriggerLater() {

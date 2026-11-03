@@ -42,10 +42,11 @@ class VisionSessionApiTest {
     @Autowired WebApplicationContext context;
     @Autowired VisionSessionRepository sessions;
     @Autowired KeypadTriggerPort triggers;
+    @Autowired com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository events;
     MockMvc mvc;
 
     @BeforeEach void setup() {
-        reset(sessions, triggers);
+        reset(sessions, triggers, events);
         when(triggers.exists("trg-1")).thenReturn(true);
         mvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
@@ -63,6 +64,22 @@ class VisionSessionApiTest {
         mvc.perform(get(URL + "/vision-1").header("X-Device-Api-Key", "test-key"))
                 .andExpect(status().isOk()).andExpect(jsonPath("data.triggerId").value("trg-1"));
         verify(sessions, times(1)).insert(any());
+    }
+
+    @Test void audioRegistrationUsesEventIdOnlyEvenWhenMqttHasBothIds() throws Exception {
+        var event = com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent.builder()
+                .eventId("audio-event").triggerId("issued-trigger")
+                .triggerType(com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType.AUDIO)
+                .triggeredAt(java.time.OffsetDateTime.now()).status("CAMERA_REQUESTED").build();
+        when(events.findByEventId("audio-event")).thenReturn(Optional.of(event));
+        String body = "{\"sessionId\":\"audio-session\",\"triggerType\":\"AUDIO\",\"eventId\":\"audio-event\"}";
+        mvc.perform(post(URL).header("X-Device-Api-Key", "test-key").contentType("application/json").content(body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("data.eventId").value("audio-event"))
+                .andExpect(jsonPath("data.triggerId").isEmpty());
+        mvc.perform(post(URL).header("X-Device-Api-Key", "test-key").contentType("application/json")
+                        .content(body.replace("}", ",\"triggerId\":\"issued-trigger\"}")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_VISION_TRIGGER"));
+        verify(sessions).insert(any());
     }
 
     @Test void bothRoutesRequireDeviceKeyEvenWithBearerToken() throws Exception {
