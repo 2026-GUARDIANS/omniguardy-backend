@@ -67,4 +67,21 @@ class NotificationServiceTest {
 
         verify(push).send(eq("android-test"), anyString(), anyString(), eq("SECURITY_EVENT"), eq("2"), isNull());
     }
+
+    @Test void earlyAlertReusesPushPortAndPublicEventIdAndClearlyStatesFinalAnalysisIsPending() {
+        when(tokens.findAllByUserAndActiveTrue(owner)).thenReturn(List.of(
+                DeviceToken.builder().user(owner).token("early-test-token").active(true).build()));
+        assertTrue(service.sendEarlySecurityAlert(owner, "evt-early", "AUDIO"));
+        var notification = ArgumentCaptor.forClass(Notification.class);
+        verify(notifications).save(notification.capture());
+        assertTrue(notification.getValue().getMessage().contains("최종 분석은 진행 중"));
+        verify(push).send(eq("early-test-token"), eq(notification.getValue().getTitle()),
+                eq(notification.getValue().getMessage()), eq("SECURITY_EVENT"), eq("3"), eq("evt-early"));
+    }
+
+    @Test void earlyAlertWithoutTokensDoesNotClaimProviderDelivery() {
+        when(tokens.findAllByUserAndActiveTrue(owner)).thenReturn(List.of());
+        assertFalse(service.sendEarlySecurityAlert(owner, null, "KEYPAD"));
+        verifyNoInteractions(push);
+    }
 }
