@@ -25,6 +25,9 @@ omniguardy:
     max-attempts: ${STREAMING_AGENT_MAX_ATTEMPTS:3}
     batch-size: ${STREAMING_AGENT_BATCH_SIZE:10}
     scheduler-delay-ms: ${STREAMING_AGENT_SCHEDULER_DELAY_MS:1000}
+    scheduler-pool-size: ${STREAMING_AGENT_SCHEDULER_POOL_SIZE:1}
+    worker-pool-size: ${STREAMING_AGENT_WORKER_POOL_SIZE:4}
+    worker-queue-capacity: ${STREAMING_AGENT_WORKER_QUEUE_CAPACITY:20}
   streaming-video:
     upload-lease: ${STREAMING_VIDEO_UPLOAD_LEASE:5m}
     event-link-enabled: ${STREAMING_VIDEO_EVENT_LINK_ENABLED:true}
