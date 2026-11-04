@@ -46,6 +46,7 @@ import static com.omniguardy.backend.domain.visionsession.StreamingVisionTestSup
         "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid", "AI_FASTAPI_VISION_BASE_URL=https://vision.invalid",
         "ai.fastapi.streaming-vision.polling-enabled=false",
         "omniguardy.vision-fallback.enabled=false",
+        "omniguardy.streaming-video.event-link-enabled=false",
         "FIREBASE_CREDENTIALS_PATH=/not-used-mocked.json", "AWS_REGION=ap-northeast-2", "S3_BUCKET_NAME=test-bucket"
 })
 class ProdDatabaseIntegrationTest {
@@ -67,6 +68,45 @@ class ProdDatabaseIntegrationTest {
     @Autowired com.omniguardy.backend.domain.visionsession.application.port.out.VisionFallbackRepository fallbackJobs;
     @Autowired com.omniguardy.backend.domain.visionsession.application.model.VisionFallbackPolicy fallbackPolicy;
     @Autowired com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard agentGuard;
+    @Autowired com.omniguardy.backend.domain.securityevent.domain.repository.SecurityEventRepository securityEvents;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort videoLinks;
+
+    @Test void mySqlVideoAttachmentSurvivesStaleManagedSaveAndConcurrentRetries() throws Exception {
+        String session = "link-" + java.util.UUID.randomUUID(); String id = java.util.UUID.randomUUID().toString();
+        String key = "videos/" + session + ".mp4";
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            securityEvents.save(com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent.builder()
+                    .eventId(id).triggerId(session).triggerType(com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType.AUDIO)
+                    .triggeredAt(OffsetDateTime.now()).status("COMPLETED").build());
+            sessions.insert(VisionSession.register(session, com.omniguardy.backend.domain.visionsession.domain.model.VisionTriggerType.AUDIO, id, null));
+            var info = new com.omniguardy.backend.domain.visionsession.infrastructure.video.Mp4VideoValidator()
+                    .validate(com.omniguardy.backend.domain.visionsession.StreamingMp4TestSupport.file(1));
+            var binding = new com.omniguardy.backend.domain.visionsession.domain.model.VisionBinding(session,
+                    com.omniguardy.backend.domain.visionsession.domain.model.VisionTriggerType.AUDIO, session, id);
+            var target = new com.omniguardy.backend.domain.detection.domain.model.VideoStorageTarget("S3", "test-bucket", session + ".mp4", key);
+            streamingVideos.complete(streamingVideos.reserve(binding, info, target, Duration.ofMinutes(5)));
+            new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                var stale = securityEvents.findByEventId(id).orElseThrow(); assertNull(stale.getVideoPath());
+                try { pool.submit(() -> videoLinks.afterUpload(session)).get(10, TimeUnit.SECONDS); }
+                catch (Exception failure) { throw new AssertionError(failure); }
+                stale.updateAgentResult("MEDIUM", 42, "synthetic assessment"); securityEvents.save(stale);
+            });
+            var first = pool.submit(() -> videoLinks.afterUpload(session));
+            var second = pool.submit(() -> videoLinks.afterUpload(session));
+            first.get(10, TimeUnit.SECONDS); second.get(10, TimeUnit.SECONDS);
+            var event = securityEvents.findByEventId(id).orElseThrow();
+            assertEquals(key, event.getVideoPath()); assertEquals("COMPLETED", event.getStatus()); assertEquals(42, event.getRiskScore());
+            assertEquals(com.omniguardy.backend.domain.securityevent.domain.model.VideoLinkResult.CONFLICT,
+                    securityEvents.linkVideo(id, event.getTriggerType(), session, "videos/different.mp4"));
+            assertEquals(key, securityEvents.findByEventId(id).orElseThrow().getVideoPath());
+        } finally {
+            pool.shutdownNow();
+            jdbc.update("DELETE FROM streaming_session_videos WHERE session_id=?", session);
+            jdbc.update("DELETE FROM vision_sessions WHERE session_id=?", session);
+            jdbc.update("DELETE FROM security_events WHERE event_id=?", id);
+        }
+    }
 
     @Test void mySqlFallbackAndAgentReservationsSurviveConcurrentDiscoveryAndRestart() throws Exception {
         String marker="fallback-"+java.util.UUID.randomUUID(); String eventId=java.util.UUID.randomUUID().toString();

@@ -48,7 +48,7 @@ import static org.mockito.Mockito.*;
         "JWT_SECRET_KEY=fallback-test-secret-at-least-32-bytes","AUDIO_DEVICE_API_KEY=test-key",
         "MQTT_BROKER_URL=tcp://127.0.0.1:1","MQTT_USERNAME=backend","MQTT_PASSWORD=test-only",
         "OMNIGUARDY_DEMO_USERID=1","AGENT_AI_ENABLED=false","ai.fastapi.streaming-vision.polling-enabled=false",
-        "omniguardy.streaming-agent.enabled=false","omniguardy.vision-fallback.enabled=false",
+        "omniguardy.streaming-agent.enabled=false","omniguardy.vision-fallback.enabled=false","omniguardy.streaming-video.event-link-enabled=false",
         "omniguardy.vision-fallback.retry-delay=1s","omniguardy.vision-fallback.video-wait=10s",
         "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid","AI_FASTAPI_VISION_BASE_URL=https://vision.invalid",
         "FIREBASE_CREDENTIALS_PATH=/mocked-not-used.json","AWS_REGION=ap-northeast-2","S3_BUCKET_NAME=test-bucket"

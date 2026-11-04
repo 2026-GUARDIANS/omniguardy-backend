@@ -88,6 +88,7 @@ class StreamingVideoApiTest {
     }
     @Test void mapsSessionConflictStorageAndDatabaseErrors() throws Exception {
         var errors = java.util.List.of(VISION_SESSION_NOT_FOUND, STREAMING_VIDEO_CONFLICT, INVALID_STREAMING_MP4,
+                STREAMING_VIDEO_EVENT_CONFLICT, STREAMING_VIDEO_BINDING_MISMATCH,
                 STREAMING_VIDEO_STORAGE_FAILED, STREAMING_VIDEO_DATABASE_FAILED);
         for (var error : errors) {
             doThrow(new BusinessException(error)).when(videos).upload(anyString(), any());

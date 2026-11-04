@@ -34,7 +34,7 @@ public class StreamingSessionVideoController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Empty file, invalid ID or missing part"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Device key required"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Session or issued trigger not found"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Content/binding/configuration conflict or upload in progress"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Content/binding/configuration conflict, a different event video, or upload in progress"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "413", description = "File exceeds 100 MiB"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "415", description = "Invalid MP4 or request content type"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "502", description = "Storage error; retry same file"),

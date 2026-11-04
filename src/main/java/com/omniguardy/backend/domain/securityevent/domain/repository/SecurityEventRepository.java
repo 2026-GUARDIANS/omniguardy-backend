@@ -1,6 +1,8 @@
 package com.omniguardy.backend.domain.securityevent.domain.repository;
 
 import com.omniguardy.backend.domain.securityevent.domain.model.SecurityEvent;
+import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType;
+import com.omniguardy.backend.domain.securityevent.domain.model.VideoLinkResult;
 import java.util.Optional;
 import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
@@ -14,5 +16,6 @@ public interface SecurityEventRepository {
     Optional<SecurityEvent> findLatestByUserId(Long userId);
     long countByUserIdAndCreatedAtBetween(Long userId, LocalDateTime start, LocalDateTime end);
     SecurityEvent save(SecurityEvent event);
+    VideoLinkResult linkVideo(String eventId, EventTriggerType triggerType, String triggerId, String storagePath);
 }
 

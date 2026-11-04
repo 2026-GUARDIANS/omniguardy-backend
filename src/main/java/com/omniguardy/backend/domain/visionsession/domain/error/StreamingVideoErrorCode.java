@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 
 @Getter @RequiredArgsConstructor
 public enum StreamingVideoErrorCode implements BaseErrorCode {
+    STREAMING_VIDEO_EVENT_CONFLICT(HttpStatus.CONFLICT, "STREAMING_VIDEO_EVENT_CONFLICT", "The security event already references a different video; the stored upload is preserved."),
     INVALID_STREAMING_MP4(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_STREAMING_MP4", "A structurally valid MP4 video with video/mp4 content type and .mp4 filename is required."),
     EMPTY_STREAMING_VIDEO(HttpStatus.BAD_REQUEST, "EMPTY_STREAMING_VIDEO", "The video file is empty."),
     STREAMING_VIDEO_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "STREAMING_VIDEO_TOO_LARGE", "Video size must not exceed 100 MiB."),

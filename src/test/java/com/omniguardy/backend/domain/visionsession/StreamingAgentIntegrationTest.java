@@ -39,7 +39,7 @@ import static org.mockito.Mockito.*;
         "JWT_SECRET_KEY=streaming-agent-test-secret-at-least-32-bytes", "AUDIO_DEVICE_API_KEY=test-key",
         "MQTT_BROKER_URL=tcp://127.0.0.1:1", "MQTT_USERNAME=backend", "MQTT_PASSWORD=test-only",
         "OMNIGUARDY_DEMO_USERID=1", "AGENT_AI_ENABLED=false", "ai.fastapi.streaming-vision.polling-enabled=false",
-        "omniguardy.streaming-agent.enabled=false", "omniguardy.vision-fallback.enabled=false", "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid",
+        "omniguardy.streaming-agent.enabled=false", "omniguardy.vision-fallback.enabled=false", "omniguardy.streaming-video.event-link-enabled=false", "AI_FASTAPI_AUDIO_BASE_URL=https://audio.invalid",
         "AI_FASTAPI_VISION_BASE_URL=https://vision.invalid", "FIREBASE_CREDENTIALS_PATH=/mocked-not-used.json",
         "AWS_REGION=ap-northeast-2", "S3_BUCKET_NAME=test-only"
 })
@@ -64,6 +64,11 @@ class StreamingAgentIntegrationTest {
     @Autowired ProcessStreamingAgentService worker;
     @Autowired PlatformTransactionManager transactions;
     @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.StreamingSessionVideoInputPort videos;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort links;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean StreamingVideoEventLinkPort videoLinks;
+    @MockitoBean com.omniguardy.backend.domain.securityevent.application.port.out.VideoUrlPort videoUrls;
+    @Autowired org.springframework.web.context.WebApplicationContext web;
+    @Autowired com.omniguardy.backend.domain.auth.infrastructure.security.JwtProvider jwt;
     MutableClock time;
     User user;
     java.sql.Connection schema;
@@ -102,7 +107,8 @@ class StreamingAgentIntegrationTest {
         assertEquals(1, countEvents());
         var after = securityEvents.findByEventId("audio-video-event").orElseThrow();
         assertEquals(before.getStatus(), after.getStatus()); assertEquals(before.getAudioProbability(), after.getAudioProbability());
-        assertNull(after.getVideoPath()); assertNull(videos.find("keypad-video").securityEventId());
+        assertEquals(videos.find("audio-video").storagePath(), after.getVideoPath());
+        assertNull(videos.find("keypad-video").securityEventId());
         assertEquals("audio-video-event", videos.find("audio-video").securityEventId());
         verify(s3, times(2)).putObject(any(software.amazon.awssdk.services.s3.model.PutObjectRequest.class),
                 any(software.amazon.awssdk.core.sync.RequestBody.class));
@@ -307,6 +313,170 @@ class StreamingAgentIntegrationTest {
         assertEquals("ALREADY_COMPLETED", jobs.find("audio").orElseThrow().reason());
         assertEquals(72, securityEvents.findByEventId("audio-event").orElseThrow().getRiskScore());
         verifyNoInteractions(risk, notifications, sound);
+    }
+
+    @Test void keypadUploadBeforeEventLinksAfterCommitAndKeepsOriginalNullableBinding() {
+        seedKeypad("keypad", "SILENT_SIGNAL", 1);
+        var stored = videos.upload("keypad", StreamingMp4TestSupport.file(1)).video();
+        assertEquals(0, countEvents());
+        worker.processDue();
+        String id = jobs.find("keypad").orElseThrow().eventId();
+        assertEquals(stored.storagePath(), securityEvents.findByEventId(id).orElseThrow().getVideoPath());
+        assertEquals(id, videos.find("keypad").securityEventId());
+        assertNull(jdbc.queryForObject("SELECT security_event_id FROM streaming_session_videos WHERE session_id='keypad'", String.class));
+        assertEquals(1, countEvents()); verify(risk).assess(any());
+    }
+
+    @Test void eventBeforeUploadAttachesToCompletedKeypadWithoutRepeatingResponses() {
+        seedKeypad("keypad", "SILENT_SIGNAL", 1); worker.processDue();
+        String id = jobs.find("keypad").orElseThrow().eventId();
+        var before = securityEvents.findByEventId(id).orElseThrow();
+        assertEquals("COMPLETED", before.getStatus());
+        var stored = videos.upload("keypad", StreamingMp4TestSupport.file(1)).video();
+        var after = securityEvents.findByEventId(id).orElseThrow();
+        assertEquals(stored.storagePath(), after.getVideoPath()); assertEquals(before.getRiskScore(), after.getRiskScore());
+        assertFalse(videos.upload("keypad", StreamingMp4TestSupport.file(1)).storedNow());
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(id));
+    }
+
+    @Test void completedAudioWithoutRiskAcceptsVideoAndKeypadWithoutEventsCreatesNoEvent() {
+        seedAudio("audio", null); seedKeypad("keypad", null, 0); worker.processDue();
+        var audio = videos.upload("audio", StreamingMp4TestSupport.file(1)).video();
+        videos.upload("keypad", StreamingMp4TestSupport.file(2)); links.reconcile();
+        var event = securityEvents.findByEventId("audio-event").orElseThrow();
+        assertEquals("COMPLETED", event.getStatus()); assertEquals(audio.storagePath(), event.getVideoPath());
+        assertEquals(1, countEvents()); assertNull(videos.find("keypad").securityEventId());
+        verifyNoInteractions(risk, notifications, sound);
+    }
+
+    @Test void identicalReplayRetriesFailedAttachmentWithoutAnotherS3Put() {
+        seedAudio("audio", null);
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("temporary"))
+                .doCallRealMethod().when(videoLinks).link(any());
+        var first = videos.upload("audio", StreamingMp4TestSupport.file(1));
+        assertTrue(first.storedNow()); assertNull(securityEvents.findByEventId("audio-event").orElseThrow().getVideoPath());
+        assertFalse(videos.upload("audio", StreamingMp4TestSupport.file(1)).storedNow());
+        assertEquals(first.video().storagePath(), securityEvents.findByEventId("audio-event").orElseThrow().getVideoPath());
+        verify(s3).putObject(any(software.amazon.awssdk.services.s3.model.PutObjectRequest.class), any(software.amazon.awssdk.core.sync.RequestBody.class));
+    }
+
+    @Test void reconciliationRepairsHistoricAudioAndKeypadRowsAndContinuesPastConflict() {
+        seedAudio("a-conflict", null); seedAudio("b-audio", null); seedKeypad("c-keypad", "SILENT_SIGNAL", 1);
+        videos.upload("a-conflict", StreamingMp4TestSupport.file(1));
+        videos.upload("b-audio", StreamingMp4TestSupport.file(2));
+        videos.upload("c-keypad", StreamingMp4TestSupport.file(3)); worker.processDue();
+        jdbc.update("UPDATE security_events SET video_path=NULL"); // Simulate pre-fix rows.
+        jdbc.update("UPDATE security_events SET video_path='videos/existing.mp4' WHERE event_id='a-conflict-event'");
+        org.springframework.test.util.ReflectionTestUtils.setField(links, "batchSize", 1);
+        try { for (int page = 0; page < 4; page++) links.reconcile(); }
+        finally { org.springframework.test.util.ReflectionTestUtils.setField(links, "batchSize", 100); }
+        assertEquals("videos/existing.mp4", securityEvents.findByEventId("a-conflict-event").orElseThrow().getVideoPath());
+        assertEquals(videos.find("b-audio").storagePath(), securityEvents.findByEventId("b-audio-event").orElseThrow().getVideoPath());
+        String keypadId = jobs.find("c-keypad").orElseThrow().eventId();
+        assertEquals(videos.find("c-keypad").storagePath(), securityEvents.findByEventId(keypadId).orElseThrow().getVideoPath());
+        var conflict = assertThrows(com.omniguardy.backend.global.error.exception.BusinessException.class,
+                () -> videos.upload("a-conflict", StreamingMp4TestSupport.file(1)));
+        assertEquals("STREAMING_VIDEO_EVENT_CONFLICT", conflict.getErrorCode().getCode());
+        assertEquals(StreamingSessionVideo.State.STORED, videos.find("a-conflict").uploadState());
+    }
+
+    @Test void mismatchedEventTriggerNeverReceivesStoredPath() {
+        seedAudio("audio", null);
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("temporary")).when(videoLinks).link(any());
+        videos.upload("audio", StreamingMp4TestSupport.file(1)); reset(videoLinks);
+        jdbc.update("UPDATE security_events SET trigger_id='different-trigger' WHERE event_id='audio-event'");
+        links.reconcile();
+        assertNull(securityEvents.findByEventId("audio-event").orElseThrow().getVideoPath());
+        assertEquals(1, countEvents());
+    }
+
+    @Test void failedAfterCommitAttachmentDoesNotBlockAgentAndReconciliationRepairsIt() {
+        seedKeypad("keypad", "SILENT_SIGNAL", 1);
+        var stored = videos.upload("keypad", StreamingMp4TestSupport.file(1)).video();
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("temporary"))
+                .doCallRealMethod().when(videoLinks).link(any());
+        worker.processDue();
+        var job = jobs.find("keypad").orElseThrow();
+        assertEquals(StreamingAgentJob.State.SUCCEEDED, job.state());
+        assertNull(securityEvents.findByEventId(job.eventId()).orElseThrow().getVideoPath());
+        links.reconcile();
+        assertEquals(stored.storagePath(), securityEvents.findByEventId(job.eventId()).orElseThrow().getVideoPath());
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(job.eventId()));
+    }
+
+    @Test void videoMetadataPointingAtAnotherSessionsEventIsRejected() {
+        seedAudio("first", null); seedAudio("second", null);
+        videos.upload("first", StreamingMp4TestSupport.file(1));
+        jdbc.update("UPDATE security_events SET video_path=NULL WHERE event_id='first-event'");
+        jdbc.update("UPDATE streaming_session_videos SET security_event_id='second-event' WHERE session_id='first'");
+        var invalid = assertThrows(com.omniguardy.backend.global.error.exception.BusinessException.class,
+                () -> links.afterUpload("first"));
+        assertEquals("STREAMING_VIDEO_BINDING_MISMATCH", invalid.getErrorCode().getCode());
+        links.reconcile();
+        assertNull(securityEvents.findByEventId("first-event").orElseThrow().getVideoPath());
+        assertNull(securityEvents.findByEventId("second-event").orElseThrow().getVideoPath());
+    }
+
+    @Test void agentSavingStaleNullCannotErasePathAttachedDuringExternalCall() throws Exception {
+        seedAudio("audio", "CAMERA_OCCLUSION_SUSPECTED");
+        var entered = new CountDownLatch(1); var resume = new CountDownLatch(1);
+        when(risk.assess(any())).thenAnswer(call -> {
+            entered.countDown(); assertTrue(resume.await(10, TimeUnit.SECONDS));
+            return new AgentAssessment(RiskLevel.MEDIUM, 42, "assessment");
+        });
+        var pool = Executors.newSingleThreadExecutor();
+        try {
+            var agent = pool.submit(worker::processDue); assertTrue(entered.await(10, TimeUnit.SECONDS));
+            var stored = videos.upload("audio", StreamingMp4TestSupport.file(1)).video();
+            assertEquals(stored.storagePath(), securityEvents.findByEventId("audio-event").orElseThrow().getVideoPath());
+            resume.countDown(); agent.get(10, TimeUnit.SECONDS);
+            var event = securityEvents.findByEventId("audio-event").orElseThrow();
+            assertEquals("COMPLETED", event.getStatus()); assertEquals(stored.storagePath(), event.getVideoPath());
+            verify(risk).assess(any());
+        } finally { resume.countDown(); pool.shutdownNow(); }
+    }
+
+    @Test void staleManagedSaveAndConcurrentDuplicateLinksPreservePath() throws Exception {
+        seedAudio("audio", null);
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("temporary")).when(videoLinks).link(any());
+        var stored = videos.upload("audio", StreamingMp4TestSupport.file(1)).video(); reset(videoLinks);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                var stale = securityEvents.findByEventId("audio-event").orElseThrow(); assertNull(stale.getVideoPath());
+                try { pool.submit(() -> links.afterUpload("audio")).get(10, TimeUnit.SECONDS); }
+                catch (Exception failure) { throw new AssertionError(failure); }
+                stale.completeWithoutRisk(); securityEvents.save(stale);
+            });
+            var one = pool.submit(() -> links.afterUpload("audio"));
+            var two = pool.submit(() -> links.afterUpload("audio"));
+            one.get(10, TimeUnit.SECONDS); two.get(10, TimeUnit.SECONDS);
+            assertEquals(stored.storagePath(), securityEvents.findByEventId("audio-event").orElseThrow().getVideoPath());
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test void existingVideoUrlHttpApiSignsOnlyTheLinkedOwnedObjectKey() throws Exception {
+        seedAudio("audio", null);
+        var stored = videos.upload("audio", StreamingMp4TestSupport.file(1)).video();
+        when(videoUrls.sign(stored.storagePath())).thenReturn("https://signed.invalid/video");
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup(web)
+                .addFilters(web.getBean("springSecurityFilterChain", jakarta.servlet.Filter.class)).build();
+        String path = "/api/security-events/audio-event/video-url";
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path)
+                .header("Authorization", "Bearer " + jwt.createAccessToken(user.getId(), user.getEmail())))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("url").value("https://signed.invalid/video"));
+        var other = users.save(User.builder().email("other@test.invalid").name("other").password("synthetic").phoneNumber("010-other").build());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path)
+                .header("Authorization", "Bearer " + jwt.createAccessToken(other.getId(), other.getEmail())))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        verify(videoUrls).sign(stored.storagePath());
+        assertFalse(stored.storagePath().contains("://"));
     }
 
     StreamingAgentJob prepareCalling() {
