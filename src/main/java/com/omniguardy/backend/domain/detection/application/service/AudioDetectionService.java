@@ -8,6 +8,7 @@ import com.omniguardy.backend.domain.user.application.usecase.DemoUserResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -39,11 +40,17 @@ public class AudioDetectionService {
         String eventId = UUID.randomUUID().toString();
         OffsetDateTime triggeredAt = OffsetDateTime.now();
         MediaStoragePort.StoredMedia stored = file == null ? null : mediaStoragePort.saveAudio(eventId, file);
-        SecurityEvent event = SecurityEvent.builder().eventId(eventId).user(user)
-                .audioEventType(analysis.eventType()).audioProbability(analysis.probability())
-                .audioPath(stored == null ? null : stored.path()).status("AUDIO_DETECTED").build();
-        event.connectAudioTrigger(eventId, triggeredAt);
-        securityEventRepository.save(event);
+        SecurityEvent event = PerformanceLog.measure("AUDIO_SECURITY_EVENT", () -> {
+            SecurityEvent created = SecurityEvent.builder().eventId(eventId).user(user)
+                    .audioEventType(analysis.eventType()).audioProbability(analysis.probability())
+                    .audioPath(stored == null ? null : stored.path()).status("AUDIO_DETECTED").build();
+            created.connectAudioTrigger(eventId, triggeredAt);
+            PerformanceLog.correlate(created.getEventId(), created.getTriggerId(), null, "AUDIO");
+            PerformanceLog.observedAt(triggeredAt.toInstant(), "SERVER_AUDIO_TRIGGER_RECORDED");
+            securityEventRepository.save(created);
+            PerformanceLog.result("PERSISTENCE_METHOD_RETURNED");
+            return created;
+        });
         // Publish the issued trigger held by the event, not a separately reconstructed ID.
         cameraCommandPort.startCamera(new CameraStartCommand(event.getTriggerId(), TriggerType.AUDIO,
                 event.getEventId(), event.getTriggeredAt(), 10));

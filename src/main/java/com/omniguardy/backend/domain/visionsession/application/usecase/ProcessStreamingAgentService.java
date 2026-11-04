@@ -7,6 +7,7 @@ import com.omniguardy.backend.domain.visionsession.domain.model.StreamingAgentJo
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.model.StreamingAgentJob.State.*;
 import static com.omniguardy.backend.domain.visionsession.application.port.out.StreamingAgentEventPort.EventState.ASSESSED;
 
@@ -33,6 +34,12 @@ public class ProcessStreamingAgentService {
     }
 
     private void prepare(StreamingAgentJob claim) {
+        try (var scope = PerformanceLog.scope(claim.eventId(), null, claim.sessionId(), null, claim.attempts())) {
+            prepareAndCall(claim);
+        }
+    }
+
+    private void prepareAndCall(StreamingAgentJob claim) {
         if (claim.attempts() > policy.maxAttempts()) {
             jobs.finish(claim, FAILED, "RETRY_EXHAUSTED", "NOT_STARTED"); return;
         }

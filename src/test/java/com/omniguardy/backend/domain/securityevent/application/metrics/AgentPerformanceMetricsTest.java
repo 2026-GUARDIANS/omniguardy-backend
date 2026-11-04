@@ -40,6 +40,8 @@ class AgentPerformanceMetricsTest {
     void recordsAggregatesAndLogsSuccessFailureAndTimeout() {
         AgentPerformanceMetrics metrics = new AgentPerformanceMetrics();
         Logger logger = (Logger) LoggerFactory.getLogger(AgentPerformanceMetrics.class);
+        var previousLevel = logger.getLevel();
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
@@ -68,6 +70,7 @@ class AgentPerformanceMetricsTest {
                     .anyMatch(message -> message.contains(
                             "agent_execution eventType=KEYPAD durationMs=30.0 success=false timeout=true")));
         } finally {
+            logger.setLevel(previousLevel);
             logger.detachAppender(appender);
             appender.stop();
         }

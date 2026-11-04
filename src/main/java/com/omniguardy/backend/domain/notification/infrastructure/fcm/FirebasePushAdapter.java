@@ -7,6 +7,7 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.Notification;
 import org.springframework.stereotype.Service;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Service
 public class FirebasePushAdapter implements PushNotificationPort {
@@ -20,6 +21,21 @@ public class FirebasePushAdapter implements PushNotificationPort {
             String riskLevel,
             String eventId
     ) {
+        try (var scope = PerformanceLog.scope(eventId, null, null, null, null)) {
+            PerformanceLog.run("FCM_SEND_REQUEST", () -> {
+                try {
+                    sendRequest(token, title, body, type, riskLevel, eventId);
+                    PerformanceLog.result("PROVIDER_API_RETURNED");
+                    PerformanceLog.elapsed("EVENT_TO_FCM_REQUEST", true, null, "FCM_PROVIDER_API_RETURN");
+                } catch (RuntimeException | Error failure) {
+                    PerformanceLog.elapsed("EVENT_TO_FCM_REQUEST", false, failure, "FCM_PROVIDER_API_RETURN");
+                    throw failure;
+                }
+            });
+        }
+    }
+
+    private void sendRequest(String token, String title, String body, String type, String riskLevel, String eventId) {
         try {
             Message.Builder builder = Message.builder()
                     .setToken(token)

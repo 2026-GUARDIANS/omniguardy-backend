@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import lombok.extern.slf4j.Slf4j;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Component
 @Slf4j
@@ -46,6 +47,10 @@ public class AudioFastApiAdapter implements AudioAnalysisPort {
 
     @Override
     public AudioAnalysis analyze(MediaFile file) {
+        return PerformanceLog.measure("LEGACY_AUDIO_AI_HTTP", () -> analyzeRequest(file));
+    }
+
+    private AudioAnalysis analyzeRequest(MediaFile file) {
         long startedNanos = System.nanoTime();
         boolean success = false;
         try {
@@ -63,7 +68,7 @@ public class AudioFastApiAdapter implements AudioAnalysisPort {
         } catch (RestClientException | IllegalArgumentException exception) {
             throw new BusinessException(DetectionErrorCode.AUDIO_ANALYSIS_FAILED, exception);
         } finally {
-            log.info("external_api_call api=audio_fastapi eventType=AUDIO durationMs={} success={}",
+            log.debug("external_api_call api=audio_fastapi eventType=AUDIO durationMs={} success={}",
                     elapsedMillis(startedNanos), success);
         }
     }

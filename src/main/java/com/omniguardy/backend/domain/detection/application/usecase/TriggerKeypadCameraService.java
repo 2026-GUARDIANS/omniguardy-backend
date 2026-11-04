@@ -8,6 +8,7 @@ import com.omniguardy.backend.domain.visionsession.application.port.out.KeypadTr
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -32,6 +33,8 @@ public class TriggerKeypadCameraService
                 10
         );
 
+        PerformanceLog.correlate(null, command.triggerId(), null, "KEYPAD");
+        PerformanceLog.observedAt(command.triggeredAt().toInstant(), "SERVER_KEYPAD_TRIGGER_RECORDED");
         keypadTriggers.record(command.triggerId(), command.triggeredAt());
         cameraCommandPort.startCamera(command);
     }

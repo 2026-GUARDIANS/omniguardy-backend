@@ -11,6 +11,7 @@ import com.omniguardy.backend.global.error.GlobalErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.error.VisionSessionErrorCode.*;
 
 @Service
@@ -23,6 +24,15 @@ public class VisionSessionService implements VisionSessionInputPort {
     // Deliberately outside a transaction: a duplicate insert rolls back before the replay read.
     @Override
     public Registration register(String sessionId, VisionTriggerType type, String eventId, String triggerId) {
+        PerformanceLog.correlate(eventId, triggerId, sessionId, type == null ? null : type.name());
+        return PerformanceLog.measure("VISION_SESSION_REGISTER", () -> {
+            var result = registerSession(sessionId, type, eventId, triggerId);
+            PerformanceLog.result(result.created() ? "CREATED" : "REPLAY");
+            return result;
+        });
+    }
+
+    private Registration registerSession(String sessionId, VisionTriggerType type, String eventId, String triggerId) {
         var candidate = VisionSession.register(sessionId, type, eventId, triggerId);
         var existing = sessions.findBySessionId(sessionId);
         if (existing.isPresent()) return replay(existing.get(), candidate);

@@ -1,0 +1,11 @@
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <appender name="PERFORMANCE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder><pattern>%msg%n</pattern><charset>UTF-8</charset></encoder>
+    </appender>
+    <logger name="omniguardy.performance" level="INFO" additivity="false">
+        <appender-ref ref="PERFORMANCE_JSON"/>
+    </logger>
+    <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+</configuration>

@@ -51,11 +51,11 @@ public class AgentPerformanceMetrics {
             recentAgentExecutions.addLast(new ExecutionSample(eventType, durationNanos));
         }
 
-        log.info("agent_execution eventType={} durationMs={} success={} timeout={}",
+        log.debug("agent_execution eventType={} durationMs={} success={} timeout={}",
                 eventType == null ? "UNKNOWN" : eventType.name(), millis(durationNanos), success, timeout);
 
         Snapshot snapshot = snapshot();
-        log.info("agent_metrics executions={} windowAverageMs={} windowP95Ms={} windowSampleCount={} "
+        log.debug("agent_metrics executions={} windowAverageMs={} windowP95Ms={} windowSampleCount={} "
                         + "eventTypeWindowAverageMs={} llmCallCount={} failureCount={} timeoutCount={}",
                 snapshot.agentExecutionCount(), snapshot.agentAverageMs(), snapshot.agentP95Ms(),
                 snapshot.p95SampleCount(), snapshot.eventTypeAverageMs(), snapshot.llmCallCount(),
@@ -65,7 +65,7 @@ public class AgentPerformanceMetrics {
     public void recordLlmCall(EventTriggerType eventType, long durationNanos,
                               boolean success, Throwable failure) {
         llmCallCount.increment();
-        log.info("llm_api_call eventType={} durationMs={} success={} timeout={}",
+        log.debug("llm_api_call eventType={} durationMs={} success={} timeout={}",
                 eventType == null ? "UNKNOWN" : eventType.name(), millis(durationNanos), success,
                 !success && isTimeout(failure));
     }

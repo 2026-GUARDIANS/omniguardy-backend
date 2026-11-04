@@ -9,6 +9,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Map;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Component
 @RequiredArgsConstructor
@@ -21,6 +22,19 @@ public class MqttSoundCommandAdapter implements SoundCommandPort {
 
     @Override
     public void send(SoundType type) {
+        PerformanceLog.run("MQTT_SOUND_COMMAND", () -> {
+            try {
+                publish(type);
+                PerformanceLog.result(type.name() + "_CLIENT_HANDOFF_ACCEPTED");
+                PerformanceLog.elapsed("EVENT_TO_SOUND_COMMAND", true, null, "MQTT_CLIENT_HANDOFF");
+            } catch (RuntimeException | Error failure) {
+                PerformanceLog.elapsed("EVENT_TO_SOUND_COMMAND", false, failure, "MQTT_CLIENT_HANDOFF");
+                throw failure;
+            }
+        });
+    }
+
+    private void publish(SoundType type) {
         try {
             String payload = jsonMapper.writeValueAsString(
                     Map.of("type", type.name())

@@ -10,6 +10,7 @@ import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @RequiredArgsConstructor
 public class LangChainRiskAssessmentAdapter implements RiskAssessmentPort {
@@ -19,6 +20,12 @@ public class LangChainRiskAssessmentAdapter implements RiskAssessmentPort {
 
     @Override
     public AgentAssessment assess(AgentContext context) {
+        try (var scope = PerformanceLog.scope(context.eventId(), null, null, context.triggerType().name(), null)) {
+            return assessContext(context);
+        }
+    }
+
+    private AgentAssessment assessContext(AgentContext context) {
         String contextJson;
         try {
             contextJson = objectMapper.writeValueAsString(context);
@@ -27,6 +34,7 @@ public class LangChainRiskAssessmentAdapter implements RiskAssessmentPort {
         }
 
         long startedNanos = System.nanoTime();
+        var span = PerformanceLog.start("AGENT_LLM_CALL");
         boolean success = false;
         Throwable failure = null;
         try {
@@ -45,6 +53,8 @@ public class LangChainRiskAssessmentAdapter implements RiskAssessmentPort {
             failure = exception;
             throw exception;
         } finally {
+            if (!success) span.failure(failure);
+            span.close();
             performanceMetrics.recordLlmCall(context.triggerType(),
                     System.nanoTime() - startedNanos, success, failure);
         }

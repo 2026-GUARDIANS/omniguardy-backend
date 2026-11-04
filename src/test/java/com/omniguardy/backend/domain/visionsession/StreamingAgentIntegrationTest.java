@@ -479,6 +479,20 @@ class StreamingAgentIntegrationTest {
         assertFalse(stored.storagePath().contains("://"));
     }
 
+    @Test void performanceLogsCarryStreamingCorrelationWithoutRepeatingAgentOrResponses() {
+        seedAudio("observed", "CAMERA_OCCLUSION_SUSPECTED");
+        try (var logs = new com.omniguardy.backend.global.performance.PerformanceLogCapture()) {
+            worker.processDue();
+            var execution = logs.stage("AGENT_EXECUTION"); var assessment = logs.stage("AGENT_RISK_ASSESSMENT");
+            assertEquals("observed", execution.path("sessionId").asText());
+            assertEquals("observed-event", execution.path("eventId").asText());
+            assertEquals("trigger-observed", execution.path("triggerId").asText());
+            assertEquals("AUDIO", execution.path("triggerType").asText()); assertEquals(1, execution.path("attempt").asInt());
+            assertEquals("SUCCESS", assessment.path("status").asText());
+        }
+        verify(risk).assess(any()); verify(notifications).sendSecurityAlert(any(), eq(2), eq("AUDIO"), eq("observed-event"));
+    }
+
     StreamingAgentJob prepareCalling() {
         seedKeypad("session", "SILENT_SIGNAL", 1); jobs.enqueue("session");
         var claim = jobs.claim("session", Duration.ofSeconds(30)).orElseThrow();

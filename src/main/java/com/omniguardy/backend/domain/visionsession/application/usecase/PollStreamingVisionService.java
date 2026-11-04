@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.time.Clock;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +30,13 @@ public class PollStreamingVisionService {
     }
 
     private void poll(VisionPollingJob job) {
+        try (var scope = PerformanceLog.scope(job.binding().securityEventId(), job.binding().triggerId(),
+                job.binding().sessionId(), job.binding().triggerType().name(), job.attempts())) {
+            pollSession(job);
+        }
+    }
+
+    private void pollSession(VisionPollingJob job) {
         if (!visionStreamingClock.instant().isBefore(job.deadlineAt())) {
             fail(job, "TIMEOUT", null); return;
         }

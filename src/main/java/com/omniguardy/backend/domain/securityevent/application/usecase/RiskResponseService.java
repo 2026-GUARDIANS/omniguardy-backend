@@ -8,6 +8,7 @@ import com.omniguardy.backend.domain.sound.application.port.in.PlaySoundUseCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Slf4j
 @Service
@@ -21,6 +22,13 @@ public class RiskResponseService {
     private final PlaySoundUseCase playSoundUseCase;
 
     public void respond(SecurityEvent event, RiskLevel riskLevel) {
+        try (var scope = PerformanceLog.scope(event.getEventId(), event.getTriggerId(), null,
+                event.getTriggerType() == null ? null : event.getTriggerType().name(), null)) {
+            dispatch(event, riskLevel);
+        }
+    }
+
+    private void dispatch(SecurityEvent event, RiskLevel riskLevel) {
         switch (riskLevel) {
             case LOW -> {
                 // LOW events are recorded without an external response.
