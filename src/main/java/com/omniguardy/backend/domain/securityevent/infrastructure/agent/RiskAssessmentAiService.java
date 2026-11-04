@@ -2,6 +2,7 @@ package com.omniguardy.backend.domain.securityevent.infrastructure.agent;
 
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.Result;
 
 public interface RiskAssessmentAiService {
     @SystemMessage("""
@@ -21,6 +22,6 @@ public interface RiskAssessmentAiService {
             from 0 through 100; and a concise Korean reason citing actual input values. You only assess risk and
             must not request or perform MQTT, camera, notification, database, or storage operations.
             """)
-    AgentStructuredResponse assess(@UserMessage String contextJson);
+    Result<AgentStructuredResponse> assess(@UserMessage String contextJson);
 }
 

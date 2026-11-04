@@ -4,15 +4,16 @@ import com.omniguardy.backend.domain.visionsession.application.model.StreamingAg
 import com.omniguardy.backend.domain.visionsession.application.port.out.*;
 import com.omniguardy.backend.domain.visionsession.domain.error.StreamingAgentInputException;
 import com.omniguardy.backend.domain.visionsession.domain.model.StreamingAgentJob;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.model.StreamingAgentJob.State.*;
 import static com.omniguardy.backend.domain.visionsession.application.port.out.StreamingAgentEventPort.EventState.ASSESSED;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ProcessStreamingAgentService {
     private final StreamingAgentRepository jobs;
@@ -20,14 +21,41 @@ public class ProcessStreamingAgentService {
     private final StreamingAgentEventPort events;
     private final StreamingAgentFailureClassifier failures;
     private final StreamingAgentPolicy policy;
+    private final Executor workerExecutor;
+
+    public ProcessStreamingAgentService(StreamingAgentRepository jobs, StreamingAgentMappingPort mapping,
+                                        StreamingAgentEventPort events, StreamingAgentFailureClassifier failures,
+                                        StreamingAgentPolicy policy,
+                                        @Qualifier("streamingAgentWorkerExecutor") Executor workerExecutor) {
+        this.jobs = jobs;
+        this.mapping = mapping;
+        this.events = events;
+        this.failures = failures;
+        this.policy = policy;
+        this.workerExecutor = workerExecutor;
+    }
 
     public void processDue() {
+        long batchStarted = System.nanoTime();
         for (var job : jobs.unresolved(policy.batchSize())) {
             try { jobs.reconcile(job, events.state(job.eventId()) == ASSESSED); }
             catch (RuntimeException failure) { logFailure(job.sessionId(), failure); }
         }
         for (String id : jobs.discover(policy.batchSize())) jobs.enqueue(id);
-        for (String id : jobs.due(policy.batchSize())) {
+        var work = jobs.due(policy.batchSize()).stream()
+                .map(id -> {
+                    long queuedAt = System.nanoTime();
+                    return CompletableFuture.runAsync(() -> process(id, queuedAt), workerExecutor);
+                })
+                .toArray(CompletableFuture[]::new);
+        // 스케줄 주기는 현재 batch가 끝난 뒤 계산하고, 실제 Agent 작업만 전용 풀에서 병렬 처리한다.
+        CompletableFuture.allOf(work).join();
+        PerformanceLog.duration("AGENT_CONCURRENT_BATCH", System.nanoTime() - batchStarted);
+    }
+
+    private void process(String id, long queuedAt) {
+        try (var scope = PerformanceLog.scope(null, null, id, null, null)) {
+            PerformanceLog.duration("AGENT_JOB_WAIT", System.nanoTime() - queuedAt);
             try { jobs.claim(id, policy.preparationLease()).ifPresent(this::prepare); }
             catch (RuntimeException failure) { logFailure(id, failure); } // Lease recovery handles failed DB writes.
         }

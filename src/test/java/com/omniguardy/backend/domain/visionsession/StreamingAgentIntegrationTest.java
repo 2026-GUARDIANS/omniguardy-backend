@@ -220,6 +220,24 @@ class StreamingAgentIntegrationTest {
             assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
         } finally { release.countDown(); pool.shutdownNow(); }
     }
+    @Test void oneBatchProcessesMultipleEventsConcurrently() throws Exception {
+        seedAudio("first", "CAMERA_OCCLUSION_SUSPECTED");
+        seedAudio("second", "PERSON_DWELL_OBSERVED");
+        var entered = new CountDownLatch(2); var release = new CountDownLatch(1);
+        when(risk.assess(any())).thenAnswer(call -> {
+            entered.countDown(); assertTrue(release.await(10, TimeUnit.SECONDS));
+            return new AgentAssessment(RiskLevel.LOW, 45, "actual evidence");
+        });
+        var caller = Executors.newSingleThreadExecutor();
+        try {
+            var batch = caller.submit(worker::processDue);
+            assertTrue(entered.await(10, TimeUnit.SECONDS), "두 Agent 호출이 서로를 막지 않아야 한다");
+            release.countDown(); batch.get(10, TimeUnit.SECONDS);
+            assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("first").orElseThrow().state());
+            assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("second").orElseThrow().state());
+            verify(risk, times(2)).assess(any());
+        } finally { release.countDown(); caller.shutdownNow(); }
+    }
     @Test void restartAfterPreparedEventReusesItsIdentity() {
         seedKeypad("session", "SILENT_SIGNAL", 1); jobs.enqueue("session");
         var claim = jobs.claim("session", Duration.ofSeconds(30)).orElseThrow();

@@ -19,6 +19,7 @@ import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.LangChainRiskAssessmentAdapter;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.RiskAssessmentAiService;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.AgentStructuredResponse;
+import dev.langchain4j.service.Result;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -148,7 +149,7 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals("FAILED", event.getStatus());
     }
 
-    @Test void keypadEventsReachAiServiceAsStructuredArrayWithAllFields() {
+    @Test void keypadEventsReachAiServiceWithOnlyRiskEvidence() {
         String events = """
                 [{"eventType":"REAR_CLOSE_APPROACH_SUSPECTED","confidence":0.9,"detectedFrame":20,
                   "details":{"label":"entry","count":2,"nested":{"visible":true}}}]
@@ -161,7 +162,7 @@ class AnalyzeAgentRiskUseCaseTest {
         response.riskLevel = "LOW";
         response.riskScore = 10;
         response.reason = "Vision evidence";
-        when(service.assess(anyString())).thenReturn(response);
+        when(service.assess(anyString())).thenReturn(Result.<AgentStructuredResponse>builder().content(response).build());
         ObjectMapper mapper = new ObjectMapper();
         new AnalyzeAgentRiskUseCase(repository,
                 new LangChainRiskAssessmentAdapter(service, mapper, performanceMetrics), mapper,
@@ -175,9 +176,13 @@ class AnalyzeAgentRiskUseCaseTest {
         assertEquals(0.0, json.get("audio").get("probability").asDouble());
         var actualEvents = json.get("vision").get("visionEvents");
         assertTrue(actualEvents.isArray());
-        assertEquals(mapper.readTree(events), actualEvents);
+        assertEquals("REAR_CLOSE_APPROACH_SUSPECTED", actualEvents.get(0).get("eventType").asString());
+        assertEquals(0.9, actualEvents.get(0).get("confidence").asDouble());
+        assertFalse(actualEvents.get(0).has("detectedFrame"));
+        assertFalse(actualEvents.get(0).has("details"));
         assertEquals("HIGH", event.getRiskLevel());
         assertEquals(10, event.getRiskScore());
+        assertFalse(json.has("eventId"));
         assertFalse(json.has("triggerId"));
         assertFalse(json.has("triggeredAt"));
     }

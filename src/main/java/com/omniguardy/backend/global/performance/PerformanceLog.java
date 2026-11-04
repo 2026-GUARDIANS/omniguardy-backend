@@ -96,6 +96,22 @@ public final class PerformanceLog {
     public static void httpStatus(int status) { if (ACTIVE.get() != null) ACTIVE.get().httpStatus = status; }
     public static void failure(Throwable failure) { if (ACTIVE.get() != null) ACTIVE.get().failure(failure); }
     public static void terminal() { if (ACTIVE.get() != null) ACTIVE.get().terminal = true; }
+    public static void tokens(Integer input, Integer output, Integer total) {
+        if (ACTIVE.get() != null) {
+            ACTIVE.get().inputTokens = input;
+            ACTIVE.get().outputTokens = output;
+            ACTIVE.get().totalTokens = total;
+        }
+    }
+
+    /** 이미 시작된 queue 대기처럼 호출 시점 이전 구간을 monotonic duration으로 기록한다. */
+    public static void duration(String stage, long durationNanos) {
+        Instant end = Instant.now();
+        var f = fields(stage, null, end, durationNanos / 1_000_000.0, "SUCCESS", null);
+        f.put("startedAt", null);
+        f.put("timingBasis", "MONOTONIC_DURATION_ONLY");
+        emit(f);
+    }
 
     /** Cross-worker elapsed time uses a persisted UTC instant, never another thread/process nanoTime. */
     public static void elapsed(String stage, boolean success, Throwable failure, String observationPoint) {
@@ -164,6 +180,9 @@ public final class PerformanceLog {
         private String resultCode;
         private Integer httpStatus;
         private Throwable failure;
+        private Integer inputTokens;
+        private Integer outputTokens;
+        private Integer totalTokens;
         private boolean terminal;
         private boolean transaction;
         private boolean closed;
@@ -199,6 +218,9 @@ public final class PerformanceLog {
                 if (transactionStatus != null) f.put("transactionStatus",
                         transactionStatus == TransactionSynchronization.STATUS_COMMITTED ? "COMMITTED" : "ROLLED_BACK");
                 if (polling) f.put("sampleEvery", pollSampleEvery);
+                if (inputTokens != null) f.put("inputTokens", inputTokens);
+                if (outputTokens != null) f.put("outputTokens", outputTokens);
+                if (totalTokens != null) f.put("totalTokens", totalTokens);
                 if (stage.equals("MQTT_CAMERA_START") || stage.equals("MQTT_SOUND_COMMAND")) {
                     f.put("observationPoint", "MQTT_CLIENT_HANDOFF"); f.put("recipientDeliveryConfirmed", false);
                 }
