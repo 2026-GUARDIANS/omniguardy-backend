@@ -154,7 +154,7 @@ class VisionFallbackIntegrationTest {
         assertEquals(raw,jdbc.queryForObject("SELECT raw_result_json FROM vision_final_results",String.class));
         assertEquals("FALLBACK_REQUIRED",polling.find("session").orElseThrow().state().name());
         assertEquals(job.eventId(),videos.find("session").securityEventId());
-        verify(vision).analyze(any(),any()); verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(vision).analyze(any(),any()); verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
         verify(notifications).sendSecurityAlert(any(),eq(3),eq("KEYPAD"),eq(job.eventId()));
         verify(s3).putObject(any(PutObjectRequest.class),any(RequestBody.class)); verifyNoInteractions(streaming);
         for(MediaFile file:downloaded) assertThrows(IOException.class,file::openStream);
@@ -178,7 +178,8 @@ class VisionFallbackIntegrationTest {
         var event=securityEvents.findByEventId("audio-event").orElseThrow();
         assertEquals(1,countEvents()); assertEquals(AudioEventType.KNOCK,event.getAudioEventType()); assertEquals(0.96,event.getAudioProbability());
         assertEquals("audio-event",jobs.find("audio").orElseThrow().eventId()); assertNotNull(event.getVideoPath());
-        verify(risk).assess(any()); verify(notifications).sendSecurityAlert(any(),eq(2),eq("AUDIO"),eq("audio-event")); verifyNoInteractions(sound);
+        verify(risk).assess(any()); verify(notifications).sendSecurityAlert(any(),eq(2),eq("AUDIO"),eq("audio-event"));
+        verify(sound).play(PlaySoundType.WARNING);
     }
     @Test void temporalAudioKeepsPredictionProbabilitiesAndExistingRiskDecision() {
         doAnswer(call -> {

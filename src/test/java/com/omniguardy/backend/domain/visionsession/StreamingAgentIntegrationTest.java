@@ -131,7 +131,7 @@ class StreamingAgentIntegrationTest {
         assertEquals(0, input.getValue().vision().personCount()); assertNull(input.getValue().vision().confidence());
         assertTrue(input.getValue().vision().classProbabilities().isEmpty());
         verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(job.eventId()));
-        verify(sound).play(PlaySoundType.WARNING);
+        verify(sound).play(PlaySoundType.SIREN);
     }
     @Test void validAudioUsesExistingEventAndPreservesAudioEvidence() {
         seedAudio("audio", "CAMERA_OCCLUSION_SUSPECTED"); worker.processDue();
@@ -140,7 +140,7 @@ class StreamingAgentIntegrationTest {
         assertEquals(AudioEventType.KNOCK, event.getAudioEventType()); assertEquals(0.95, event.getAudioProbability());
         assertEquals("audio-event", jobs.find("audio").orElseThrow().eventId());
         verify(risk).assess(any()); verify(notifications).sendSecurityAlert(any(), eq(2), eq("AUDIO"), eq("audio-event"));
-        verifyNoInteractions(sound);
+        verify(sound).play(PlaySoundType.WARNING);
     }
     @Test void audioDwellKeepsExistingLowRiskRule() {
         seedAudio("audio", "PERSON_DWELL_OBSERVED"); worker.processDue();
@@ -199,7 +199,7 @@ class StreamingAgentIntegrationTest {
             var second = pool.submit(worker::processDue); var third = pool.submit(worker::processDue);
             second.get(10, TimeUnit.SECONDS); third.get(10, TimeUnit.SECONDS);
             release.countDown(); first.get(10, TimeUnit.SECONDS);
-            assertEquals(1, countEvents()); verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+            assertEquals(1, countEvents()); verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
             assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
         } finally { release.countDown(); pool.shutdownNow(); }
     }
@@ -222,7 +222,7 @@ class StreamingAgentIntegrationTest {
         time.advance(Duration.ofMinutes(6)); worker.processDue();
         assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
         assertEquals("UNKNOWN_NOT_REPLAYED", jobs.find("session").orElseThrow().responseState());
-        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
         verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(calling.eventId()));
     }
     @Test void lateLiveCallerCanResolveItsUncertainAttemptWithoutSecondInvocation() {
@@ -232,7 +232,7 @@ class StreamingAgentIntegrationTest {
             return new AgentAssessment(RiskLevel.LOW, 40, "live result");
         });
         worker.processDue(); assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
-        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
     }
     @Test void knownNetworkFailureRetriesWithoutDuplicatingResponses() {
         seedKeypad("session", "SILENT_SIGNAL", 1);
@@ -241,7 +241,7 @@ class StreamingAgentIntegrationTest {
         worker.processDue(); assertEquals(StreamingAgentJob.State.PENDING, jobs.find("session").orElseThrow().state());
         verifyNoInteractions(notifications, sound); time.advance(Duration.ofSeconds(10)); worker.processDue();
         assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
-        assertEquals(1, countEvents()); verify(risk, times(2)).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        assertEquals(1, countEvents()); verify(risk, times(2)).assess(any()); verify(sound).play(PlaySoundType.SIREN);
     }
     @Test void repeatedNetworkFailuresExhaustFiniteRetryBudget() {
         seedKeypad("session", "SILENT_SIGNAL", 1);
@@ -292,7 +292,7 @@ class StreamingAgentIntegrationTest {
         assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
         assertEquals("BEST_EFFORT_ATTEMPTED", jobs.find("session").orElseThrow().responseState());
         verify(risk).assess(any()); verify(notifications).sendSecurityAlert(any(), anyInt(), anyString(), anyString());
-        verify(sound).play(PlaySoundType.WARNING);
+        verify(sound).play(PlaySoundType.SIREN);
     }
     @Test void failedLedgerCommitAfterAgentSuccessRecoversWithoutRepeatingEffects() {
         seedKeypad("session", "SILENT_SIGNAL", 1);
@@ -302,7 +302,7 @@ class StreamingAgentIntegrationTest {
         assertEquals(StreamingAgentJob.State.CALLING, jobs.find("session").orElseThrow().state());
         time.advance(Duration.ofMinutes(6)); worker.processDue();
         assertEquals(StreamingAgentJob.State.SUCCEEDED, jobs.find("session").orElseThrow().state());
-        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
         verify(notifications).sendSecurityAlert(any(), anyInt(), anyString(), anyString());
     }
     @Test void alreadyCompletedLegacyEventIsNotOverwrittenOrAssessedAgain() {
@@ -336,7 +336,7 @@ class StreamingAgentIntegrationTest {
         var after = securityEvents.findByEventId(id).orElseThrow();
         assertEquals(stored.storagePath(), after.getVideoPath()); assertEquals(before.getRiskScore(), after.getRiskScore());
         assertFalse(videos.upload("keypad", StreamingMp4TestSupport.file(1)).storedNow());
-        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
         verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(id));
     }
 
@@ -402,7 +402,7 @@ class StreamingAgentIntegrationTest {
         assertNull(securityEvents.findByEventId(job.eventId()).orElseThrow().getVideoPath());
         links.reconcile();
         assertEquals(stored.storagePath(), securityEvents.findByEventId(job.eventId()).orElseThrow().getVideoPath());
-        verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
+        verify(risk).assess(any()); verify(sound).play(PlaySoundType.SIREN);
         verify(notifications).sendSecurityAlert(any(), eq(3), eq("KEYPAD"), eq(job.eventId()));
     }
 
@@ -434,7 +434,7 @@ class StreamingAgentIntegrationTest {
             resume.countDown(); agent.get(10, TimeUnit.SECONDS);
             var event = securityEvents.findByEventId("audio-event").orElseThrow();
             assertEquals("COMPLETED", event.getStatus()); assertEquals(stored.storagePath(), event.getVideoPath());
-            verify(risk).assess(any());
+            verify(risk).assess(any()); verify(sound).play(PlaySoundType.WARNING);
         } finally { resume.countDown(); pool.shutdownNow(); }
     }
 
