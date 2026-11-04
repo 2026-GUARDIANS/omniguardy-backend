@@ -28,7 +28,7 @@ public class LangChainRiskAssessmentAdapter implements RiskAssessmentPort {
     private AgentAssessment assessContext(AgentContext context) {
         String contextJson;
         try {
-            contextJson = objectMapper.writeValueAsString(context);
+            contextJson = objectMapper.writeValueAsString(AgentPromptContext.from(context));
         } catch (JacksonException exception) {
             throw new BusinessException(SecurityEventErrorCode.AGENT_AI_RESPONSE_INVALID, exception);
         }

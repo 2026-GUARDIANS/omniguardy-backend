@@ -33,6 +33,8 @@ class LangChainRiskAssessmentAdapterTest {
         assertEquals(RiskLevel.HIGH, result.riskLevel());
         assertEquals(85, result.riskScore());
         assertEquals(1, metrics.snapshot().llmCallCount());
+        verify(service).assess(argThat(json -> !json.contains("\"eventId\"")
+                && !json.contains("details") && !json.contains("detectedFrame")));
     }
 
     @Test void rejectsInvalidRiskScore() {
