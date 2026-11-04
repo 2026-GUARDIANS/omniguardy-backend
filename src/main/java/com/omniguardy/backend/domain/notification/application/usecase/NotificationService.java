@@ -47,6 +47,24 @@ public class NotificationService {
         PerformanceLog.result(deviceTokens.isEmpty() ? "NO_ACTIVE_TOKENS" : "DISPATCH_RETURNED");
     }
 
+    /** Vision-confirmed observation; does not claim a final Agent assessment. */
+    @Transactional
+    public boolean sendEarlySecurityAlert(User user, String eventId, String triggerType) {
+        try (var scope = PerformanceLog.scope(eventId, null, null, triggerType, null)) {
+            return PerformanceLog.measure("EARLY_FCM_DISPATCH", () -> {
+                String title = "긴급 조기 경고";
+                String message = "Silent Signal이 감지되었습니다. 즉시 주변 상황을 확인해 주세요. 최종 분석은 진행 중입니다.";
+                notificationRepository.save(Notification.builder().user(user).type(NotificationType.SECURITY_EVENT)
+                        .riskLevel(3).title(title).message(message).read(false).build());
+                var tokens = deviceTokenRepository.findAllByUserAndActiveTrue(user);
+                for (var token : tokens) pushNotificationPort.send(token.getToken(), title, message,
+                        "SECURITY_EVENT", "3", eventId);
+                PerformanceLog.result(tokens.isEmpty() ? "NO_ACTIVE_TOKENS" : "DISPATCH_RETURNED");
+                return !tokens.isEmpty();
+            });
+        }
+    }
+
     private String makeTitle(int riskLevel) {
         if (riskLevel >= 3) return "긴급 위험 알림";
         if (riskLevel == 2) return "주의 상황 감지";

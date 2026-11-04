@@ -91,15 +91,16 @@ class VisionFallbackIntegrationTest {
         schema=Objects.requireNonNull(jdbc.getDataSource()).getConnection();
         for(String migration:List.of("V6__create_vision_sessions.sql","V7__create_vision_early_events.sql",
                 "V8__create_vision_polling_and_final_results.sql","V9__create_streaming_agent_jobs.sql",
-                "V10__create_streaming_session_videos.sql","V11__create_vision_fallback_jobs.sql")) {
+                "V10__create_streaming_session_videos.sql","V11__create_vision_fallback_jobs.sql","V12__create_security_response_ledger.sql")) {
             String ddl=Files.readString(Path.of("src/main/resources/db/migration/"+migration))
-                    .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin","").replace(" CHARACTER SET ascii COLLATE ascii_bin","");
+                    .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin","").replace(" CHARACTER SET ascii COLLATE ascii_bin","")
+                    .replace("UTC_TIMESTAMP(6)","CURRENT_TIMESTAMP(6)");
             new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(ddl.getBytes(java.nio.charset.StandardCharsets.UTF_8))).populate(schema);
         }
     }
     @AfterAll void close() throws Exception { schema.close(); }
     @BeforeEach void setup() throws Exception {
-        for(String table:List.of("security_agent_executions","vision_fallback_jobs","streaming_session_videos","streaming_agent_jobs",
+        for(String table:List.of("security_response_ledger","security_agent_executions","vision_fallback_jobs","streaming_session_videos","streaming_agent_jobs",
                 "vision_final_results","vision_polling_jobs","vision_early_events","vision_sessions","keypad_camera_triggers","security_events","users")) jdbc.update("DELETE FROM "+table);
         objects.clear(); downloaded.clear(); time=new MutableClock(); when(clock.instant()).thenAnswer(call -> time.instant());
         user=users.save(User.builder().email("fallback@test.invalid").name("test").password("synthetic").phoneNumber("test").build());

@@ -52,6 +52,7 @@ import static com.omniguardy.backend.domain.visionsession.StreamingVisionTestSup
 class ProdDatabaseIntegrationTest {
     @MockitoBean FirebaseConfig firebase;
     @MockitoBean StreamingVisionQueryPort streamingVision;
+    @MockitoBean com.omniguardy.backend.domain.securityevent.application.port.out.EarlyWarningDeliveryPort earlyWarningDelivery;
     @Autowired Environment env;
     @Autowired MediaStoragePort storage;
     @Autowired TtsDeliveryPort tts;

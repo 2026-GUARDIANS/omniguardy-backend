@@ -16,7 +16,8 @@ class VisionEarlyEventServiceTest {
     KeypadTriggerPort keypad = mock(KeypadTriggerPort.class);
     VisionAudioTriggerPort audio = mock(VisionAudioTriggerPort.class);
     VisionEarlyEventRepository events = mock(VisionEarlyEventRepository.class);
-    ReceiveVisionEarlyEventService service = new ReceiveVisionEarlyEventService(sessions, keypad, audio, events);
+    VisionEarlyWarningPort warnings = mock(VisionEarlyWarningPort.class);
+    ReceiveVisionEarlyEventService service = new ReceiveVisionEarlyEventService(sessions, keypad, audio, events, warnings);
 
     static VisionEarlyEvent event(VisionTriggerType type, String trigger, String securityEventId, String instance) {
         return new VisionEarlyEvent("session", trigger, securityEventId, type, instance, 1, 114, 114,
@@ -32,6 +33,7 @@ class VisionEarlyEventServiceTest {
         var event = event(KEYPAD, "trigger", null, "signal-001");
         service.receive(event);
         verify(events).insert(event);
+        verify(warnings).request("session");
         verify(sessions, never()).insert(any());
         verify(keypad, never()).record(any(), any());
         verifyNoInteractions(audio);
@@ -77,9 +79,11 @@ class VisionEarlyEventServiceTest {
         doThrow(new DuplicateVisionEarlyEventException(new RuntimeException())).when(events).insert(any());
         when(events.find("session", "one")).thenReturn(Optional.of(event));
         assertDoesNotThrow(() -> service.receive(event));
+        verify(warnings).request("session");
         var changed = new VisionEarlyEvent("session", "trigger", null, KEYPAD, "one", 2, 114, 114,
                 "3.800000", event.emittedAt());
         assertCode("VISION_EARLY_EVENT_CONFLICT", changed);
+        verify(warnings, times(1)).request("session");
         when(events.find("session", "one")).thenReturn(Optional.empty());
         assertCode("VISION_EARLY_EVENT_CONFLICT", event);
     }

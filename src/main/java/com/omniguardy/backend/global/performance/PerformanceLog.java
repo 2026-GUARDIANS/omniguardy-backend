@@ -17,6 +17,7 @@ public final class PerformanceLog {
     private static final Logger LOG = LoggerFactory.getLogger("omniguardy.performance");
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final ThreadLocal<Context> CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<Instant> REQUEST_RECEIVED_AT = new ThreadLocal<>();
     private static final ThreadLocal<Span> ACTIVE = new ThreadLocal<>();
     private static volatile boolean enabled = true;
     private static volatile int pollSampleEvery = 5;
@@ -45,9 +46,17 @@ public final class PerformanceLog {
 
     public static Scope request(String requestId) {
         var previous = CONTEXT.get();
+        var previousReceipt = REQUEST_RECEIVED_AT.get();
+        REQUEST_RECEIVED_AT.set(Instant.now());
         CONTEXT.set(new Context(null, null, null, null, null, safe(requestId), null, null, null));
-        return () -> restore(previous);
+        return () -> {
+            restore(previous);
+            if (previousReceipt == null) REQUEST_RECEIVED_AT.remove(); else REQUEST_RECEIVED_AT.set(previousReceipt);
+        };
     }
+
+    /** Server HTTP ingress only; never a Vision/Pi clock. Null outside an HTTP request scope. */
+    public static Instant requestReceivedAt() { return REQUEST_RECEIVED_AT.get(); }
 
     public static void correlate(String event, String trigger, String session, String type) {
         var c = current();

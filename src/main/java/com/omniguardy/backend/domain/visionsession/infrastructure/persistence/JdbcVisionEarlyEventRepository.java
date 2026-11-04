@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Repository
 @RequiredArgsConstructor
@@ -29,7 +30,9 @@ public class JdbcVisionEarlyEventRepository implements VisionEarlyEventRepositor
                     VALUES (?, ?, 'EARLY_EVENT', ?, ?, ?, ?, TRUE, 'SILENT_SIGNAL', ?, ?, ?, ?, ?)
                     """, event.sessionId(), event.eventInstanceId(), event.triggerId(), event.securityEventId(),
                     event.triggerType().name(), event.sequence(), event.detectedFrame(), event.confirmedFrame(),
-                    event.capturedAt(), event.emittedAt(), LocalDateTime.now(ZoneOffset.UTC));
+                    event.capturedAt(), event.emittedAt(), PerformanceLog.requestReceivedAt() == null
+                            ? LocalDateTime.now(ZoneOffset.UTC)
+                            : LocalDateTime.ofInstant(PerformanceLog.requestReceivedAt(), ZoneOffset.UTC));
         } catch (DuplicateKeyException exception) {
             throw new DuplicateVisionEarlyEventException(exception);
         }

@@ -19,12 +19,15 @@ public class ReceiveVisionEarlyEventService implements ReceiveVisionEarlyEventIn
     private final KeypadTriggerPort keypadTriggers;
     private final VisionAudioTriggerPort audioTriggers;
     private final VisionEarlyEventRepository earlyEvents;
+    private final VisionEarlyWarningPort warnings;
 
     // No enclosing transaction: a duplicate insert rolls back before the replay read.
     @Override
     public void receive(VisionEarlyEvent event) {
         PerformanceLog.correlate(event.securityEventId(), event.triggerId(), event.sessionId(), event.triggerType().name());
         PerformanceLog.run("EARLY_EVENT_STORE", () -> receiveEvent(event));
+        // Replays also repair a crash between callback commit and durable dispatch enqueue.
+        warnings.request(event.sessionId());
     }
 
     private void receiveEvent(VisionEarlyEvent event) {

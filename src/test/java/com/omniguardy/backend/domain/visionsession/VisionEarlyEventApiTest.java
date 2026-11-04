@@ -172,5 +172,6 @@ class VisionEarlyEventApiTest {
         @Bean KeypadTriggerPort keypad() { return mock(KeypadTriggerPort.class); }
         @Bean VisionAudioTriggerPort audio() { return mock(VisionAudioTriggerPort.class); }
         @Bean VisionEarlyEventRepository events() { return mock(VisionEarlyEventRepository.class); }
+        @Bean VisionEarlyWarningPort warnings() { return mock(VisionEarlyWarningPort.class); }
     }
 }

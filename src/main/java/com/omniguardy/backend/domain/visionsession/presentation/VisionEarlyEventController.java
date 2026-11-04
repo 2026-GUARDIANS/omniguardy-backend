@@ -23,7 +23,7 @@ public class VisionEarlyEventController {
     private final ReceiveVisionEarlyEventInputPort earlyEvents;
 
     @Operation(summary = "Record a provisional streaming Vision EARLY_EVENT",
-            description = "Store only. Identical retries return 204; changed payload for the same identifier returns 409.")
+            description = "Store and enqueue independent FCM/SIREN early warnings. Identical retries return 204 without duplicate dispatch; changed payload returns 409. Final analysis remains independent.")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Stored or identical retry", content = @Content),
             @ApiResponse(responseCode = "400", description = "Invalid EARLY_EVENT JSON", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),

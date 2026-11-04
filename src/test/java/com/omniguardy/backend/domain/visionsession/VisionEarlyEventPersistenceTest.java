@@ -61,7 +61,8 @@ class VisionEarlyEventPersistenceTest {
         service.receive(event);
         var received = jdbc.queryForObject("SELECT received_at FROM vision_early_events", java.time.LocalDateTime.class);
         var recreated = new ReceiveVisionEarlyEventService(context.getBean(VisionSessionRepository.class),
-                context.getBean(KeypadTriggerPort.class), context.getBean(VisionAudioTriggerPort.class), events);
+                context.getBean(KeypadTriggerPort.class), context.getBean(VisionAudioTriggerPort.class), events,
+                context.getBean(VisionEarlyWarningPort.class));
         recreated.receive(event);
         assertEquals(event, events.find("session", "one").orElseThrow());
         assertEquals(received, jdbc.queryForObject("SELECT received_at FROM vision_early_events", java.time.LocalDateTime.class));
@@ -143,5 +144,6 @@ class VisionEarlyEventPersistenceTest {
         @Bean JdbcTemplate jdbc(DataSource source) { return new JdbcTemplate(source); }
         @Bean PlatformTransactionManager manager(DataSource source) { return new DataSourceTransactionManager(source); }
         @Bean VisionAudioTriggerPort audio() { return mock(VisionAudioTriggerPort.class); }
+        @Bean VisionEarlyWarningPort warnings() { return mock(VisionEarlyWarningPort.class); }
     }
 }

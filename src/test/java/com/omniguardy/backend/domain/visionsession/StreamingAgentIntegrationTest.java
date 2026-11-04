@@ -48,6 +48,7 @@ class StreamingAgentIntegrationTest {
     @MockitoBean RiskAssessmentPort risk;
     @MockitoBean NotificationService notifications;
     @MockitoBean PlaySoundUseCase sound;
+    @MockitoBean com.omniguardy.backend.domain.securityevent.application.port.out.EarlyWarningDeliveryPort earlyDelivery;
     @MockitoBean DemoUserResolver owner;
     @MockitoBean software.amazon.awssdk.services.s3.S3Client s3;
     @MockitoBean StreamingVisionQueryPort streamingVision;
@@ -68,6 +69,9 @@ class StreamingAgentIntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean StreamingVideoEventLinkPort videoLinks;
     @MockitoBean com.omniguardy.backend.domain.securityevent.application.port.out.VideoUrlPort videoUrls;
     @Autowired org.springframework.web.context.WebApplicationContext web;
+    @Autowired com.omniguardy.backend.domain.visionsession.application.port.in.ReceiveVisionEarlyEventInputPort earlyEvents;
+    @Autowired com.omniguardy.backend.domain.securityevent.application.port.in.DispatchEarlyWarningInputPort earlyWarnings;
+    @Autowired org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor scheduledTasks;
     @Autowired com.omniguardy.backend.domain.auth.infrastructure.security.JwtProvider jwt;
     MutableClock time;
     User user;
@@ -76,17 +80,18 @@ class StreamingAgentIntegrationTest {
     @BeforeAll void migrations() throws Exception {
         schema = Objects.requireNonNull(jdbc.getDataSource()).getConnection();
         for (String file : List.of("V6__create_vision_sessions.sql", "V7__create_vision_early_events.sql",
-                "V8__create_vision_polling_and_final_results.sql", "V9__create_streaming_agent_jobs.sql", "V10__create_streaming_session_videos.sql", "V11__create_vision_fallback_jobs.sql")) {
+                "V8__create_vision_polling_and_final_results.sql", "V9__create_streaming_agent_jobs.sql", "V10__create_streaming_session_videos.sql", "V11__create_vision_fallback_jobs.sql", "V12__create_security_response_ledger.sql")) {
             var ddl = Files.readString(Path.of("src/main/resources/db/migration/" + file))
                     .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin", "")
-                    .replace(" CHARACTER SET ascii COLLATE ascii_bin", "");
+                    .replace(" CHARACTER SET ascii COLLATE ascii_bin", "")
+                    .replace("UTC_TIMESTAMP(6)", "CURRENT_TIMESTAMP(6)");
             new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(
                     ddl.getBytes(java.nio.charset.StandardCharsets.UTF_8))).populate(schema);
         }
     }
     @AfterAll void close() throws Exception { schema.close(); }
     @BeforeEach void setup() {
-        for (String table : List.of("security_agent_executions", "vision_fallback_jobs", "streaming_session_videos", "streaming_agent_jobs", "vision_final_results", "vision_polling_jobs", "vision_early_events",
+        for (String table : List.of("security_response_ledger", "security_agent_executions", "vision_fallback_jobs", "streaming_session_videos", "streaming_agent_jobs", "vision_final_results", "vision_polling_jobs", "vision_early_events",
                 "vision_sessions", "keypad_camera_triggers", "security_events", "users")) jdbc.update("DELETE FROM " + table);
         time = new MutableClock(); when(clock.instant()).thenAnswer(call -> time.instant());
         user = users.save(User.builder().email("streaming@test.invalid").name("test").password("synthetic").phoneNumber("010-test").build());
@@ -95,6 +100,18 @@ class StreamingAgentIntegrationTest {
             assertFalse(TransactionSynchronizationManager.isActualTransactionActive(), "Agent call must not hold a DB transaction");
             return new AgentAssessment(RiskLevel.LOW, 42, "기존 입력의 감지 이벤트를 확인했습니다.");
         });
+    }
+
+    @Test void bootRegistersEarlyRecoveryAlongsideIndependentVisionAgentAndFallbackSchedulers() {
+        var kick = web.getBean(com.omniguardy.backend.domain.securityevent.infrastructure.response.EarlyWarningWorkers.EarlyWarningKick.class);
+        // Spring 7 wraps ScheduledMethodRunnable for execution outcome tracking.
+        assertTrue(scheduledTasks.getScheduledTasks().stream().anyMatch(task ->
+                task.getTask().toString().equals(kick.getClass().getName() + ".recover")));
+        var recovery = web.getBean("earlyWarningTaskScheduler", org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler.class);
+        for (String scheduler : List.of("taskScheduler", "streamingAgentTaskScheduler", "streamingVideoLinkTaskScheduler", "visionFallbackTaskScheduler"))
+            assertNotSame(recovery, web.getBean(scheduler));
+        assertEquals(1, web.getBean("earlyWarningFcmExecutor", org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor.class).getQueueCapacity());
+        assertEquals(1, web.getBean("earlyWarningSoundExecutor", org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor.class).getQueueCapacity());
     }
 
     @Test void videoUploadUsesS3OnlyAndNeverRunsEitherVisionAgentOrResponse() {
@@ -523,4 +540,30 @@ class StreamingAgentIntegrationTest {
         polling.finish(claim, new StreamingVisionJsonMapper().result(json), outcome, outcome.name(), null, null);
     }
     int countEvents() { return jdbc.queryForObject("SELECT COUNT(*) FROM security_events", Integer.class); }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void earlyWarningLeavesRealFinalAgentAssessmentAndVideoLinkFlowIntact(boolean keypadTrigger) {
+        String session = keypadTrigger ? "early-keypad" : "early-audio";
+        if (keypadTrigger) seedKeypad(session, "SILENT_SIGNAL", 1);
+        else seedAudio(session, "CAMERA_OCCLUSION_SUSPECTED");
+        when(earlyDelivery.sendPush(any())).thenReturn("REQUEST_ACCEPTED");
+        earlyEvents.receive(new VisionEarlyEvent(session, "trigger-" + session,
+                keypadTrigger ? null : session + "-event", keypadTrigger ? VisionTriggerType.KEYPAD : VisionTriggerType.AUDIO,
+                "confirmed-signal", 1, 100, 114, "3.8", "2026-11-04T02:00:00Z"));
+        earlyWarnings.dispatch(com.omniguardy.backend.domain.securityevent.application.port.out.SecurityResponseLedger.Channel.FCM);
+        earlyWarnings.dispatch(com.omniguardy.backend.domain.securityevent.application.port.out.SecurityResponseLedger.Channel.SOUND);
+        var stored = videos.upload(session, StreamingMp4TestSupport.file(1)).video();
+        worker.processDue(); earlyWarnings.recover();
+        var job = jobs.find(session).orElseThrow();
+        var event = securityEvents.findByEventId(job.eventId()).orElseThrow();
+        assertEquals(StreamingAgentJob.State.SUCCEEDED, job.state());
+        assertEquals("COMPLETED", event.getStatus());
+        assertEquals(keypadTrigger ? "HIGH" : "MEDIUM", event.getRiskLevel());
+        assertEquals(stored.storagePath(), event.getVideoPath());
+        assertEquals(event.getEventId(), jdbc.queryForObject("SELECT event_id FROM security_response_ledger", String.class));
+        verify(risk).assess(any()); verifyNoInteractions(notifications, sound);
+        verify(earlyDelivery, timeout(2000).times(1)).sendPush(any());
+        verify(earlyDelivery, timeout(2000).times(1)).sendSiren();
+    }
 }
