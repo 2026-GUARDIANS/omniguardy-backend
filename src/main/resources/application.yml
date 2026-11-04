@@ -24,6 +24,9 @@ omniguardy:
     scheduler-delay-ms: ${STREAMING_AGENT_SCHEDULER_DELAY_MS:1000}
   streaming-video:
     upload-lease: ${STREAMING_VIDEO_UPLOAD_LEASE:5m}
+    event-link-enabled: ${STREAMING_VIDEO_EVENT_LINK_ENABLED:true}
+    event-link-delay-ms: ${STREAMING_VIDEO_EVENT_LINK_DELAY_MS:30000}
+    event-link-batch-size: ${STREAMING_VIDEO_EVENT_LINK_BATCH_SIZE:100}
   vision-fallback:
     enabled: ${VISION_FALLBACK_ENABLED:true}
     retry-delay: ${VISION_FALLBACK_RETRY_DELAY:10s}

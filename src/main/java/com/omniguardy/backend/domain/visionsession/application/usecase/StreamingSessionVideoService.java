@@ -4,6 +4,7 @@ import com.omniguardy.backend.domain.detection.application.model.MediaFile;
 import com.omniguardy.backend.domain.detection.application.port.out.StreamingMediaStoragePort;
 import com.omniguardy.backend.domain.visionsession.application.model.StreamingVideoView;
 import com.omniguardy.backend.domain.visionsession.application.port.in.StreamingSessionVideoInputPort;
+import com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort;
 import com.omniguardy.backend.domain.visionsession.application.port.out.*;
 import com.omniguardy.backend.domain.visionsession.domain.model.*;
 import com.omniguardy.backend.global.error.GlobalErrorCode;
@@ -17,7 +18,7 @@ import java.time.Duration;
 import static com.omniguardy.backend.domain.visionsession.domain.error.StreamingVideoErrorCode.*;
 import static com.omniguardy.backend.domain.visionsession.domain.error.VisionSessionErrorCode.*;
 
-/** Storage only: no Vision, Agent, SecurityEvent writer or notification dependency. */
+/** Stores the original and attaches metadata only; never invokes Vision, Agent, or notifications. */
 @Service @RequiredArgsConstructor @Slf4j
 public class StreamingSessionVideoService implements StreamingSessionVideoInputPort {
     private final VisionSessionRepository sessions;
@@ -26,6 +27,7 @@ public class StreamingSessionVideoService implements StreamingSessionVideoInputP
     private final StreamingVideoValidationPort validation;
     private final StreamingMediaStoragePort storage;
     private final StreamingVideoRepository videos;
+    private final LinkStreamingVideoInputPort links;
     @Qualifier("streamingVideoUploadLease") private final Duration streamingVideoUploadLease;
 
     @Override public Receipt upload(String sessionId, MediaFile file) {
@@ -42,7 +44,10 @@ public class StreamingSessionVideoService implements StreamingSessionVideoInputP
             var target = storage.planStreamingVideo(sessionId, info.sha256());
             claim = videos.reserve(new VisionBinding(sessionId, session.triggerType(), triggerId, session.eventId()),
                     info, target, streamingVideoUploadLease);
-            if (claim.state() == StreamingSessionVideo.State.STORED) return new Receipt(view(claim), false);
+            if (claim.state() == StreamingSessionVideo.State.STORED) {
+                links.afterUpload(sessionId);
+                return new Receipt(view(claim), false);
+            }
         } catch (DataAccessException failure) { throw new BusinessException(STREAMING_VIDEO_DATABASE_FAILED, failure); }
 
         try {
@@ -53,12 +58,16 @@ public class StreamingSessionVideoService implements StreamingSessionVideoInputP
             recordFailure(claim, "STORAGE_FAILED");
             throw new BusinessException(STREAMING_VIDEO_STORAGE_FAILED, failure);
         }
+        StreamingSessionVideo completed;
         try {
-            return new Receipt(view(videos.complete(claim)), true);
+            completed = videos.complete(claim);
         } catch (DataAccessException failure) {
             recordFailure(claim, "DATABASE_FAILED");
             throw new BusinessException(STREAMING_VIDEO_DATABASE_FAILED, failure);
         }
+        links.afterUpload(sessionId);
+        try { return new Receipt(view(completed), true); }
+        catch (DataAccessException failure) { throw new BusinessException(STREAMING_VIDEO_DATABASE_FAILED, failure); }
     }
 
     @Override public StreamingVideoView find(String sessionId) {

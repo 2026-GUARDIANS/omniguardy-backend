@@ -11,6 +11,8 @@ import com.omniguardy.backend.domain.securityevent.domain.error.StreamingVisionP
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.*;
+import org.springframework.context.ApplicationEventPublisher;
+import com.omniguardy.backend.domain.visionsession.infrastructure.video.StreamingVideoLinkRequested;
 
 @Component
 @RequiredArgsConstructor
@@ -19,6 +21,7 @@ public class ExistingStreamingAgentAdapter implements StreamingAgentEventPort {
     private final PrepareStreamingVisionInputPort preparation;
     private final AnalyzeAgentRiskUseCase agent;
     private final SecurityEventRepository events;
+    private final ApplicationEventPublisher publisher;
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -29,6 +32,7 @@ public class ExistingStreamingAgentAdapter implements StreamingAgentEventPort {
         try { prepared = preparation.prepare(vision, job.eventId()); }
         catch (StreamingVisionPreparationException exception) { throw new StreamingAgentInputException(exception.getMessage()); }
         jobs.prepared(job, prepared.eventId());
+        if (prepared.eventId() != null) publisher.publishEvent(new StreamingVideoLinkRequested(job.sessionId()));
         Action action = prepared.alreadyCompleted() ? Action.ALREADY_COMPLETED : prepared.assessmentRequired() ? Action.ASSESS
                 : prepared.eventId() == null ? Action.NO_EVENTS : Action.NO_RISK;
         return new Preparation(prepared.eventId(), action);

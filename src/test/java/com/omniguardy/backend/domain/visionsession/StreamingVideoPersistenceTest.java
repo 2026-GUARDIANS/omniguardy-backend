@@ -202,7 +202,8 @@ class StreamingVideoPersistenceTest {
     }
     StreamingSessionVideoService withRepository(StreamingVideoRepository repository) {
         return new StreamingSessionVideoService(context.getBean(VisionSessionRepository.class), context.getBean(KeypadTriggerPort.class),
-                context.getBean(VisionAudioTriggerPort.class), new Mp4VideoValidator(), storage, repository, Duration.ofMinutes(5));
+                context.getBean(VisionAudioTriggerPort.class), new Mp4VideoValidator(), storage, repository,
+                context.getBean(com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort.class), Duration.ofMinutes(5));
     }
     void seedKeypad(String session, String trigger) {
         new TransactionTemplate(context.getBean(PlatformTransactionManager.class)).executeWithoutResult(
@@ -216,6 +217,9 @@ class StreamingVideoPersistenceTest {
     @Import({JdbcVisionSessionRepository.class, JdbcKeypadTriggerAdapter.class, JdbcStreamingVideoRepository.class,
             JdbcVisionPollingRepository.class, StreamingSessionVideoService.class, Mp4VideoValidator.class})
     static class Config {
+        @Bean com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort links() {
+            return mock(com.omniguardy.backend.domain.visionsession.application.port.in.LinkStreamingVideoInputPort.class);
+        }
         @Bean DataSource source() { return new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", ""); }
         @Bean JdbcTemplate jdbc(DataSource ds) { return new JdbcTemplate(ds); }
         @Bean PlatformTransactionManager manager(DataSource ds) { return new DataSourceTransactionManager(ds); }
