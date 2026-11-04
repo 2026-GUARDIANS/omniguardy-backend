@@ -19,6 +19,7 @@ import com.omniguardy.backend.domain.securityevent.domain.model.EventTriggerType
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.LangChainRiskAssessmentAdapter;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.RiskAssessmentAiService;
 import com.omniguardy.backend.domain.securityevent.infrastructure.agent.AgentStructuredResponse;
+import dev.langchain4j.service.Result;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -161,7 +162,7 @@ class AnalyzeAgentRiskUseCaseTest {
         response.riskLevel = "LOW";
         response.riskScore = 10;
         response.reason = "Vision evidence";
-        when(service.assess(anyString())).thenReturn(response);
+        when(service.assess(anyString())).thenReturn(Result.<AgentStructuredResponse>builder().content(response).build());
         ObjectMapper mapper = new ObjectMapper();
         new AnalyzeAgentRiskUseCase(repository,
                 new LangChainRiskAssessmentAdapter(service, mapper, performanceMetrics), mapper,

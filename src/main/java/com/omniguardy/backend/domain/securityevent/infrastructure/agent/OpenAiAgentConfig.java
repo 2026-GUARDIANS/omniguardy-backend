@@ -38,11 +38,18 @@ public class OpenAiAgentConfig {
     @Bean
     @ConditionalOnProperty(name = "ai.agent.enabled", havingValue = "true")
     RiskAssessmentPort riskAssessmentPort(ChatModel agentChatModel, ObjectMapper objectMapper,
-                                          AgentPerformanceMetrics performanceMetrics) {
+                                          AgentPerformanceMetrics performanceMetrics,
+                                          AgentLlmConcurrencyLimiter concurrencyLimiter) {
         RiskAssessmentAiService service = AiServices.builder(RiskAssessmentAiService.class)
                 .chatModel(agentChatModel)
                 .build();
-        return new LangChainRiskAssessmentAdapter(service, objectMapper, performanceMetrics);
+        return new LangChainRiskAssessmentAdapter(service, objectMapper, performanceMetrics, concurrencyLimiter);
+    }
+
+    @Bean
+    AgentLlmConcurrencyLimiter agentLlmConcurrencyLimiter(
+            @Value("${ai.agent.max-concurrent-calls:2}") int maxConcurrentCalls) {
+        return new AgentLlmConcurrencyLimiter(maxConcurrentCalls);
     }
 
     @Bean

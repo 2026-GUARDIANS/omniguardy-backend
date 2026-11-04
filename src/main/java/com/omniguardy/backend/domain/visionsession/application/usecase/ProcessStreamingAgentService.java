@@ -36,21 +36,29 @@ public class ProcessStreamingAgentService {
     }
 
     public void processDue() {
+        long batchStarted = System.nanoTime();
         for (var job : jobs.unresolved(policy.batchSize())) {
             try { jobs.reconcile(job, events.state(job.eventId()) == ASSESSED); }
             catch (RuntimeException failure) { logFailure(job.sessionId(), failure); }
         }
         for (String id : jobs.discover(policy.batchSize())) jobs.enqueue(id);
         var work = jobs.due(policy.batchSize()).stream()
-                .map(id -> CompletableFuture.runAsync(() -> process(id), workerExecutor))
+                .map(id -> {
+                    long queuedAt = System.nanoTime();
+                    return CompletableFuture.runAsync(() -> process(id, queuedAt), workerExecutor);
+                })
                 .toArray(CompletableFuture[]::new);
         // 스케줄 주기는 현재 batch가 끝난 뒤 계산하고, 실제 Agent 작업만 전용 풀에서 병렬 처리한다.
         CompletableFuture.allOf(work).join();
+        PerformanceLog.duration("AGENT_CONCURRENT_BATCH", System.nanoTime() - batchStarted);
     }
 
-    private void process(String id) {
-        try { jobs.claim(id, policy.preparationLease()).ifPresent(this::prepare); }
-        catch (RuntimeException failure) { logFailure(id, failure); } // Lease recovery handles failed DB writes.
+    private void process(String id, long queuedAt) {
+        try (var scope = PerformanceLog.scope(null, null, id, null, null)) {
+            PerformanceLog.duration("AGENT_JOB_WAIT", System.nanoTime() - queuedAt);
+            try { jobs.claim(id, policy.preparationLease()).ifPresent(this::prepare); }
+            catch (RuntimeException failure) { logFailure(id, failure); } // Lease recovery handles failed DB writes.
+        }
     }
 
     private void prepare(StreamingAgentJob claim) {

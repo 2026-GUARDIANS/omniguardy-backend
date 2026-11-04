@@ -45,6 +45,8 @@ omniguardy:
     scheduler-delay-ms: ${VISION_FALLBACK_SCHEDULER_DELAY_MS:1000}
 
 ai:
+  agent:
+    max-concurrent-calls: ${AGENT_MAX_CONCURRENT_CALLS:2}
   fastapi:
     streaming-vision:
       # Development default only. Production Compose requires an EC2-reachable origin.
