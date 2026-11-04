@@ -159,6 +159,20 @@ class VisionFallbackIntegrationTest {
         verify(s3).putObject(any(PutObjectRequest.class),any(RequestBody.class)); verifyNoInteractions(streaming);
         for(MediaFile file:downloaded) assertThrows(IOException.class,file::openStream);
     }
+    @Test void fallbackPerformanceLogMeasuresOnlyExecutedVisionAttemptWithSessionBinding() {
+        seed("observed",VisionTriggerType.KEYPAD,VisionFinalOutcome.PARTIAL); upload("observed");
+        try (var logs = new com.omniguardy.backend.global.performance.PerformanceLogCapture()) {
+            worker.processDue(); worker.processDue();
+            var visionLog = logs.stage("FALLBACK_MP4_VISION");
+            assertEquals("observed",visionLog.path("sessionId").asText()); assertEquals("trigger-observed",visionLog.path("triggerId").asText());
+            assertEquals("KEYPAD",visionLog.path("triggerType").asText()); assertEquals(1,visionLog.path("attempt").asInt());
+            assertEquals("SUCCESS",visionLog.path("status").asText());
+            assertEquals(1,logs.events().stream().filter(e -> "FALLBACK_MP4_VISION".equals(e.path("stage").asText())).count());
+            assertEquals("observed",logs.stage("AGENT_EXECUTION").path("sessionId").asText());
+        }
+        verify(vision).analyze(any(),any()); verify(risk).assess(any());
+    }
+
     @Test void failedAudioReusesEventAndPreservesAudioEvidence() {
         seed("audio",VisionTriggerType.AUDIO,VisionFinalOutcome.FAILED); upload("audio"); worker.processDue();
         var event=securityEvents.findByEventId("audio-event").orElseThrow();

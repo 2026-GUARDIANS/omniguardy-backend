@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +23,12 @@ public class MqttCameraCommandAdapter implements CameraCommandPort {
 
     @Override
     public void startCamera(CameraStartCommand command) {
+        try (var scope = PerformanceLog.scope(command.securityEventId(), command.triggerId(), null, command.triggerType().name(), null)) {
+            PerformanceLog.run("MQTT_CAMERA_START", () -> publish(command));
+        }
+    }
+
+    private void publish(CameraStartCommand command) {
         CameraStartMessage message = new CameraStartMessage(
                 "CAMERA_START",
                 command.duration(),
@@ -35,6 +42,7 @@ public class MqttCameraCommandAdapter implements CameraCommandPort {
         String payload = objectMapper.writeValueAsString(message);
 
         mqttGateway.sendToMqtt(payload, cameraTopic);
+        PerformanceLog.result("CLIENT_HANDOFF_ACCEPTED");
     }
 
     private record CameraStartMessage(

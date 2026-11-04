@@ -8,6 +8,7 @@ import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.Objects;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.error.VisionSessionErrorCode.*;
 import static com.omniguardy.backend.domain.visionsession.domain.error.VisionEarlyEventErrorCode.*;
 
@@ -22,6 +23,11 @@ public class ReceiveVisionEarlyEventService implements ReceiveVisionEarlyEventIn
     // No enclosing transaction: a duplicate insert rolls back before the replay read.
     @Override
     public void receive(VisionEarlyEvent event) {
+        PerformanceLog.correlate(event.securityEventId(), event.triggerId(), event.sessionId(), event.triggerType().name());
+        PerformanceLog.run("EARLY_EVENT_STORE", () -> receiveEvent(event));
+    }
+
+    private void receiveEvent(VisionEarlyEvent event) {
         var session = sessions.findBySessionId(event.sessionId())
                 .orElseThrow(() -> new BusinessException(VISION_SESSION_NOT_FOUND));
         if (session.triggerType() != event.triggerType()) mismatch();
@@ -36,10 +42,12 @@ public class ReceiveVisionEarlyEventService implements ReceiveVisionEarlyEventIn
         }
         try {
             earlyEvents.insert(event);
+            PerformanceLog.result("STORED");
         } catch (DuplicateVisionEarlyEventException exception) {
             var stored = earlyEvents.find(event.sessionId(), event.eventInstanceId())
                     .orElseThrow(() -> new BusinessException(VISION_EARLY_EVENT_CONFLICT));
             if (!stored.equals(event)) throw new BusinessException(VISION_EARLY_EVENT_CONFLICT);
+            PerformanceLog.result("REPLAY");
         }
     }
 

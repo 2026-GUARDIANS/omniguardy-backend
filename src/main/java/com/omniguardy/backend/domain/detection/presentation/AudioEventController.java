@@ -22,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import static com.omniguardy.backend.global.config.OpenApiExamples.*;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @RestController
 @RequiredArgsConstructor
@@ -50,6 +51,7 @@ public class AudioEventController {
     @PostMapping(value = "/audio-result", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<AudioEventResponse>> receive(@Valid @RequestBody AudioEventRequestDto request) {
         var result = receiveAudioEvent.receive(request.detectionId(), request.toAnalysis());
+        PerformanceLog.result(result.outcome().name());
         return SuccessResponse.of(DetectionSuccessCode.AUDIO_RESULT_RECEIVED,
                 new AudioEventResponse(request.detectionId(), result.eventId(), result.outcome()));
     }

@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.net.http.HttpClient;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Component
 @Slf4j
@@ -55,6 +56,13 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
             MediaFile file,
             VideoTriggerContext triggerContext
     ) {
+        try (var scope = PerformanceLog.scope(triggerContext.securityEventId(), triggerContext.triggerId(), null,
+                triggerContext.triggerType().name(), null)) {
+            return PerformanceLog.measure("MP4_VISION_HTTP", () -> analyzeRequest(file, triggerContext));
+        }
+    }
+
+    private VisionAnalysis analyzeRequest(MediaFile file, VideoTriggerContext triggerContext) {
         long startedNanos = System.nanoTime();
         boolean success = false;
 
@@ -134,7 +142,7 @@ public class VisionFastApiAdapter implements VisionAnalysisPort {
         } catch (RuntimeException exception) {
             throw new BusinessException(DetectionErrorCode.VISION_ANALYSIS_FAILED, exception);
         } finally {
-            log.info("external_api_call api=vision_fastapi eventType={} durationMs={} success={}",
+            log.debug("external_api_call api=vision_fastapi eventType={} durationMs={} success={}",
                     triggerContext.triggerType().name(),
                     elapsedMillis(startedNanos), success);
         }

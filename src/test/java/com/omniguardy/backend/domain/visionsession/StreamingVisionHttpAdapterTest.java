@@ -74,11 +74,16 @@ class StreamingVisionHttpAdapterTest {
         }
     }
     @Test void readTimeoutAndConnectionFailureAreRetryable() {
+        try (var logs = new com.omniguardy.backend.global.performance.PerformanceLogCapture()) {
         var shortTimeout = new StreamingVisionHttpAdapter(baseUrl(), Duration.ofMillis(200), Duration.ofMillis(100));
         responses.add(new Response(200, statusJson("session", "trigger", "KEYPAD", null), 500));
         assertFailure("NETWORK_ERROR", true, () -> shortTimeout.status("session"));
+        assertEquals("TIMEOUT", logs.stage("VISION_STATUS_HTTP").path("status").asText());
+        assertEquals("session", logs.stage("VISION_STATUS_HTTP").path("sessionId").asText());
         server.stop(0);
         assertFailure("NETWORK_ERROR", true, () -> shortTimeout.status("session"));
+        assertEquals("FAILURE", logs.events().getLast().path("status").asText());
+        }
     }
     void assertFailure(String code, boolean retryable, Runnable action) {
         var failure = assertThrows(StreamingVisionException.class, action::run);

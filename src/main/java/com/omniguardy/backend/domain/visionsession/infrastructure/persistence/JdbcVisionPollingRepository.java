@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.error.VisionSessionErrorCode.*;
 
 @Repository
@@ -100,11 +101,21 @@ public class JdbcVisionPollingRepository implements VisionPollingRepository {
 
     private void finishWithinTransaction(VisionPollingJob claim, StreamingVisionFinalResult result, VisionFinalOutcome outcome,
                                          String reason, String error, String statusJson, Instant now) {
+        try (var scope = PerformanceLog.scope(claim.binding().securityEventId(), claim.binding().triggerId(),
+                claim.binding().sessionId(), claim.binding().triggerType().name(), claim.attempts())) {
+            PerformanceLog.transaction("VISION_FINAL_STORE", () -> persistFinal(claim, result, outcome, reason, error, statusJson, now));
+        }
+    }
+
+    private void persistFinal(VisionPollingJob claim, StreamingVisionFinalResult result, VisionFinalOutcome outcome,
+                              String reason, String error, String statusJson, Instant now) {
         var current = jdbc.query("SELECT * FROM vision_polling_jobs WHERE session_id = ? FOR UPDATE", this::map,
                 claim.binding().sessionId()).stream().findFirst();
         if (current.isEmpty() || current.get().state() != VisionProcessingState.RUNNING
                 || !Objects.equals(current.get().leaseToken(), claim.leaseToken())
-                || !current.get().leaseUntil().isAfter(now)) return; // Stale/crashed worker is fenced out.
+                || !current.get().leaseUntil().isAfter(now)) {
+            PerformanceLog.result("STALE_IGNORED"); return; // Stale/crashed worker is fenced out.
+        }
         if (!now.isBefore(current.get().deadlineAt())) {
             result = null; outcome = VisionFinalOutcome.FAILED; reason = "TIMEOUT"; error = "TIMEOUT";
         }
@@ -127,6 +138,7 @@ public class JdbcVisionPollingRepository implements VisionPollingRepository {
                     reason = ?, last_error = ?, last_status_json = COALESCE(?, last_status_json), finished_at = ?
                 WHERE session_id = ?
                 """, valid ? "SUCCEEDED" : "FALLBACK_REQUIRED", reason, error, statusJson, sql(now), claim.binding().sessionId());
+        PerformanceLog.result(reason);
     }
 
     private VisionPollingJob map(ResultSet rs, int row) throws SQLException {

@@ -34,6 +34,16 @@ class AnalyzeAgentRiskUseCaseTest {
     private final AnalyzeAgentRiskUseCase useCase = new AnalyzeAgentRiskUseCase(
             repository, port, new ObjectMapper(), riskResponseService, performanceMetrics);
 
+    @Test void timingObservationFailureNeverChangesRiskOrResponse() {
+        var timing = mock(com.omniguardy.backend.domain.securityevent.application.port.out.ServerEventTimingPort.class);
+        when(timing.find(anyString())).thenThrow(new IllegalStateException("observation unavailable"));
+        useCase.setServerEventTimingPort(timing);
+        var event = visionAnalyzedEvent(); when(repository.findByEventId("event-1")).thenReturn(Optional.of(event));
+        when(port.assess(any())).thenReturn(new AgentAssessment(RiskLevel.HIGH, 85, "synthetic"));
+        assertEquals(RiskLevel.MEDIUM, useCase.analyze("event-1").riskLevel());
+        verify(riskResponseService).respond(event, RiskLevel.MEDIUM); verify(repository).save(event);
+    }
+
     @Test void includesAudioAndAllVisionDataAndCompletesExistingEvent() {
         SecurityEvent event = visionAnalyzedEvent();
         when(repository.findByEventId("event-1")).thenReturn(Optional.of(event));

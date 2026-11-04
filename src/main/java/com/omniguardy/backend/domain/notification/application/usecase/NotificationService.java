@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +28,12 @@ public class NotificationService {
 
     @Transactional
     public void sendSecurityAlert(User user, int riskLevel, String eventType, String eventId) {
+        try (var scope = PerformanceLog.scope(eventId, null, null, eventType, null)) {
+            PerformanceLog.transaction("FCM_DISPATCH", () -> dispatch(user, riskLevel, eventId));
+        }
+    }
+
+    private void dispatch(User user, int riskLevel, String eventId) {
         String title = makeTitle(riskLevel);
         String message = makeMessage(riskLevel);
         notificationRepository.save(Notification.builder().user(user).type(NotificationType.SECURITY_EVENT)
@@ -37,6 +44,7 @@ public class NotificationService {
             pushNotificationPort.send(deviceToken.getToken(), title, message,
                     "SECURITY_EVENT", String.valueOf(riskLevel), eventId);
         }
+        PerformanceLog.result(deviceTokens.isEmpty() ? "NO_ACTIVE_TOKENS" : "DISPATCH_RETURNED");
     }
 
     private String makeTitle(int riskLevel) {

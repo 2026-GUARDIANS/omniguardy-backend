@@ -221,6 +221,7 @@ class VisionPollingPersistenceTest {
     }
 
     @Test void finalInsertAndBothStateChangesRollBackTogetherOnDatabaseFailure() {
+        try (var logs = new com.omniguardy.backend.global.performance.PerformanceLogCapture()) {
         completion.complete("session");
         var claim = jobs.claim("session", Duration.ofSeconds(30)).orElseThrow();
         jdbc.execute("ALTER TABLE vision_polling_jobs ADD CONSTRAINT test_reject_success CHECK (processing_state <> 'SUCCEEDED')");
@@ -228,9 +229,16 @@ class VisionPollingPersistenceTest {
                 VisionFinalOutcome.VALID, "VALID_RESULT", null, null));
         assertEquals(0, finalCount()); assertEquals("REGISTERED", sessionState());
         assertEquals(VisionProcessingState.RUNNING, jobs.find("session").orElseThrow().state());
+        assertEquals("ROLLED_BACK", logs.stage("VISION_FINAL_STORE").path("transactionStatus").asText());
+        assertEquals("FAILURE", logs.stage("VISION_FINAL_STORE").path("status").asText());
         jdbc.execute("ALTER TABLE vision_polling_jobs DROP CONSTRAINT test_reject_success");
         jobs.finish(claim, result("session", "trigger", "KEYPAD", null), VisionFinalOutcome.VALID, "VALID_RESULT", null, null);
         assertEquals(1, finalCount());
+        var success = logs.events().getLast();
+        assertEquals("COMMITTED", success.path("transactionStatus").asText());
+        assertEquals("session", success.path("sessionId").asText());
+        assertEquals("SUCCESS", success.path("status").asText());
+        }
     }
 
     @Test void lateResultNeverBecomesEligibleEvenIfNetworkReturnedSuccessfully() {

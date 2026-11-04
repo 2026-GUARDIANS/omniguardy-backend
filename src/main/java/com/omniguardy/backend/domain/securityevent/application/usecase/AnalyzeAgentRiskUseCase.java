@@ -18,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.Map;
 import java.util.List;
+import com.omniguardy.backend.global.performance.PerformanceLog;
+import com.omniguardy.backend.domain.securityevent.application.port.out.ServerEventTimingPort;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +32,10 @@ public class AnalyzeAgentRiskUseCase {
     private final RiskResponseService riskResponseService;
     private final AgentPerformanceMetrics performanceMetrics;
     private com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard executionGuard;
+    private ServerEventTimingPort timing;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setServerEventTimingPort(ServerEventTimingPort timing) { this.timing = timing; }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setExecutionGuard(com.omniguardy.backend.domain.securityevent.application.port.out.AgentExecutionGuard guard) {
@@ -42,6 +48,12 @@ public class AnalyzeAgentRiskUseCase {
 
     /** Same Agent contract/rules; fallback supplies its durable event reservation token. */
     public AgentAssessment analyzeReserved(String eventId, String reservationToken) {
+        try (var scope = PerformanceLog.scope(eventId, null, null, null, null)) {
+            return PerformanceLog.measure("AGENT_EXECUTION", () -> analyzeEvent(eventId, reservationToken));
+        }
+    }
+
+    private AgentAssessment analyzeEvent(String eventId, String reservationToken) {
         long startedNanos = System.nanoTime();
         EventTriggerType eventType = null;
         boolean success = false;
@@ -52,10 +64,12 @@ public class AnalyzeAgentRiskUseCase {
             SecurityEvent event = securityEventRepository.findByEventId(eventId)
                     .orElseThrow(() -> new BusinessException(SecurityEventErrorCode.SECURITY_EVENT_NOT_FOUND));
             eventType = event.getTriggerType();
+            enrichTiming(event);
             if (executionGuard != null) {
                 execution = executionGuard.begin(eventId, reservationToken);
                 if (execution.alreadyCompleted()) {
                     success = true;
+                    PerformanceLog.result("ALREADY_COMPLETED");
                     return execution.completedAssessment();
                 }
             }
@@ -64,13 +78,7 @@ public class AnalyzeAgentRiskUseCase {
             }
             AgentAssessment assessment;
             try {
-                AgentContext context = toContext(event);
-                RiskLevel requiredRiskLevel = requiredRiskLevel(context);
-                AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
-                assessment = new AgentAssessment(
-                        requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
-                event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
-                securityEventRepository.save(event);
+                assessment = PerformanceLog.measure("AGENT_RISK_ASSESSMENT", () -> assessAndRecord(event));
                 assessmentRecorded = true;
             } catch (RuntimeException exception) {
                 event.fail();
@@ -81,6 +89,7 @@ public class AnalyzeAgentRiskUseCase {
             riskResponseService.respond(event, assessment.riskLevel());
             if (execution != null) executionGuard.succeeded(execution);
             success = true;
+            PerformanceLog.result("COMPLETED");
             return assessment;
         } catch (RuntimeException | Error exception) {
             failure = exception;
@@ -93,6 +102,29 @@ public class AnalyzeAgentRiskUseCase {
             performanceMetrics.recordAgentExecution(
                     eventType, System.nanoTime() - startedNanos, success, failure);
         }
+    }
+
+    private AgentAssessment assessAndRecord(SecurityEvent event) {
+        AgentContext context = toContext(event);
+        RiskLevel requiredRiskLevel = requiredRiskLevel(context);
+        AgentAssessment agentAssessment = riskAssessmentPort.assess(context);
+        AgentAssessment assessment = new AgentAssessment(requiredRiskLevel, agentAssessment.riskScore(), agentAssessment.reason());
+        event.updateAgentResult(assessment.riskLevel().name(), assessment.riskScore(), assessment.reason());
+        securityEventRepository.save(event);
+        PerformanceLog.result("ASSESSMENT_RECORDED");
+        return assessment;
+    }
+
+    private void enrichTiming(SecurityEvent event) {
+        PerformanceLog.correlate(event.getEventId(), event.getTriggerId(), null,
+                event.getTriggerType() == null ? null : event.getTriggerType().name());
+        if (timing == null) return;
+        try {
+            timing.find(event.getEventId()).ifPresent(value -> {
+                PerformanceLog.correlate(null, null, value.sessionId(), null);
+                PerformanceLog.observedAt(value.observedAt(), value.baseline());
+            });
+        } catch (RuntimeException ignored) { /* Timing lookup failure must not affect Agent/response processing. */ }
     }
 
     private AgentContext toContext(SecurityEvent event) {

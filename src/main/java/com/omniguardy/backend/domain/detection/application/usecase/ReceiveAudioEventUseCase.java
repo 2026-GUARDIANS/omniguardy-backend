@@ -9,6 +9,7 @@ import com.omniguardy.backend.global.error.GlobalErrorCode;
 import com.omniguardy.backend.global.error.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 
 @Service
 @RequiredArgsConstructor
@@ -17,6 +18,16 @@ public class ReceiveAudioEventUseCase implements ReceiveAudioEventInputPort {
 
     @Override
     public AudioDetectionResult receive(String detectionId, AudioAnalysis analysis) {
+        PerformanceLog.correlate(null, null, null, "AUDIO");
+        PerformanceLog.detection(detectionId);
+        return PerformanceLog.measure("AUDIO_RESULT_PROCESSING", () -> {
+            var result = receiveResult(detectionId, analysis);
+            PerformanceLog.result(result.outcome().name());
+            return result;
+        });
+    }
+
+    private AudioDetectionResult receiveResult(String detectionId, AudioAnalysis analysis) {
         if (detectionId == null || !detectionId.matches("[A-Za-z0-9_-]{1,128}") || analysis == null
                 || analysis.eventType() == null || !Double.isFinite(analysis.probability())
                 || analysis.probability() < 0 || analysis.probability() > 1) {

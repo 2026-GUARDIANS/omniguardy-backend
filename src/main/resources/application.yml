@@ -6,6 +6,9 @@ spring:
     baseline-version: 0
 
 omniguardy:
+  performance:
+    enabled: ${PERFORMANCE_LOG_ENABLED:true}
+    poll-sample-every: ${PERFORMANCE_POLL_SAMPLE_EVERY:5}
   device:
     api-key: ${AUDIO_DEVICE_API_KEY:}
   vision:

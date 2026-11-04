@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 import java.util.*;
+import com.omniguardy.backend.global.performance.PerformanceLog;
 import static com.omniguardy.backend.domain.visionsession.domain.model.VisionFallbackJob.State.*;
 
 /** No enclosing transaction: all I/O is outside the fenced persistence/preparation transactions. */
@@ -38,9 +39,16 @@ public class ProcessVisionFallbackService {
         }
     }
     private void process(VisionFallbackJob claim) {
+        try (var scope = PerformanceLog.scope(claim.eventId(), null, claim.sessionId(), null, claim.attempts())) {
+            processSession(claim);
+        }
+    }
+
+    private void processSession(VisionFallbackJob claim) {
         try {
             if(claim.attempts()>policy.maxPreparationAttempts()) { jobs.finish(claim,FAILED,"PREPARATION_RETRY_EXHAUSTED"); return; }
             var source=jobs.source(claim);
+            PerformanceLog.correlate(source.context().securityEventId(), source.context().triggerId(), claim.sessionId(), source.context().triggerType().name());
             if(events.alreadyOwned(source,claim.eventId())) { jobs.finish(claim,SKIPPED,"EXISTING_EVENT_OWNS_ANALYSIS"); return; }
             if(source.video().isEmpty()) { jobs.waitForVideo(claim,policy); return; }
             if(claim.visionJson()==null && source.video().get().storedAt().isAfter(claim.videoDeadline())) {
@@ -53,8 +61,13 @@ public class ProcessVisionFallbackService {
                     jobs.finish(claim,FAILED,"VISION_RETRY_EXHAUSTED"); return;
                 }
                 try(var download=reader.read(source.video().get())) {
-                    result=vision.analyze(download.file(),source.context());
-                    validate(result,source.context());
+                    try (var scope = PerformanceLog.scope(null, null, null, null, claim.visionAttempts() + 1)) {
+                        result=PerformanceLog.measure("FALLBACK_MP4_VISION", () -> {
+                            var analyzed = vision.analyze(download.file(),source.context());
+                            validate(analyzed,source.context());
+                            return analyzed;
+                        });
+                    }
                     if(!jobs.analyzed(claim,result)) return;
                 }
             }
