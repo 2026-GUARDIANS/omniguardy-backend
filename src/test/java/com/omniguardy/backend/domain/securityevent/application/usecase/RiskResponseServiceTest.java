@@ -25,49 +25,50 @@ class RiskResponseServiceTest {
     }
 
     @Test
-    void mediumSendsOnlyPushNotification() {
+    void mediumSendsPushAndPlaysWarning() {
         User user = mock(User.class);
 
         service.respond(event(user), RiskLevel.MEDIUM);
 
         verify(notificationService).sendSecurityAlert(user, 2, "AUDIO", "event-1");
-        verifyNoInteractions(playSoundUseCase);
-    }
-
-    @Test
-    void mediumWithoutRecipientSkipsPushWithoutFailing() {
-        service.respond(event(null), RiskLevel.MEDIUM);
-
-        verifyNoInteractions(notificationService, playSoundUseCase);
-    }
-
-    @Test
-    void highSendsPushAndPlaysWarning() {
-        User user = mock(User.class);
-
-        service.respond(event(user), RiskLevel.HIGH);
-
-        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
         verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     @Test
-    void highWithoutRecipientStillPlaysWarning() {
-        service.respond(event(null), RiskLevel.HIGH);
+    void mediumWithoutRecipientStillPlaysWarning() {
+        service.respond(event(null), RiskLevel.MEDIUM);
 
         verifyNoInteractions(notificationService);
         verify(playSoundUseCase).play(PlaySoundType.WARNING);
     }
 
     @Test
-    void pushFailureDoesNotPreventHighRiskWarning() {
+    void highSendsPushAndPlaysSiren() {
+        User user = mock(User.class);
+
+        service.respond(event(user), RiskLevel.HIGH);
+
+        verify(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
+    }
+
+    @Test
+    void highWithoutRecipientStillPlaysSiren() {
+        service.respond(event(null), RiskLevel.HIGH);
+
+        verifyNoInteractions(notificationService);
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
+    }
+
+    @Test
+    void pushFailureDoesNotPreventHighRiskSiren() {
         User user = mock(User.class);
         doThrow(new IllegalStateException("FCM unavailable"))
                 .when(notificationService).sendSecurityAlert(user, 3, "AUDIO", "event-1");
 
         service.respond(event(user), RiskLevel.HIGH);
 
-        verify(playSoundUseCase).play(PlaySoundType.WARNING);
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
     }
 
     @Test
@@ -77,7 +78,7 @@ class RiskResponseServiceTest {
 
         service.respond(event(null), RiskLevel.HIGH);
 
-        verify(playSoundUseCase).play(PlaySoundType.WARNING);
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
     }
 
     @Test
@@ -99,7 +100,7 @@ class RiskResponseServiceTest {
         service.respond(event, RiskLevel.HIGH);
 
         verify(notificationService).sendSecurityAlert(user, 3, "KEYPAD", "evt-keypad-public");
-        verify(playSoundUseCase).play(PlaySoundType.WARNING);
+        verify(playSoundUseCase).play(PlaySoundType.SIREN);
     }
 
     private SecurityEvent event(User user) {

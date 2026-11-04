@@ -33,7 +33,10 @@ public class RiskResponseService {
             case LOW -> {
                 // LOW events are recorded without an external response.
             }
-            case MEDIUM -> sendPushIfRecipientExists(event, MEDIUM_NOTIFICATION_LEVEL);
+            case MEDIUM -> {
+                sendPushIfRecipientExists(event, MEDIUM_NOTIFICATION_LEVEL);
+                playRiskSound(event, riskLevel);
+            }
             case HIGH, CRITICAL -> {
                 sendPushIfRecipientExists(event, HIGH_NOTIFICATION_LEVEL);
                 playRiskSound(event, riskLevel);
@@ -61,9 +64,9 @@ public class RiskResponseService {
 
     private void playRiskSound(SecurityEvent event, RiskLevel riskLevel) {
         try {
-            PlaySoundType soundType = riskLevel == RiskLevel.CRITICAL
-                    ? PlaySoundType.SIREN
-                    : PlaySoundType.WARNING;
+            PlaySoundType soundType = riskLevel == RiskLevel.MEDIUM
+                    ? PlaySoundType.WARNING
+                    : PlaySoundType.SIREN;
             playSoundUseCase.play(soundType);
         } catch (RuntimeException exception) {
             log.error("Risk sound playback failed: eventId={}, riskLevel={}",
